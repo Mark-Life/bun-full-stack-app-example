@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { APITester } from "./APITester";
+import { APITester } from "./app/APITester";
 import "./index.css";
 
 import logo from "./logo.svg";

@@ -7,12 +7,15 @@
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { RouterProvider } from "./lib/client-router";
 import { App } from "./App";
 
 const elem = document.getElementById("root")!;
 const app = (
   <StrictMode>
-    <App />
+    <RouterProvider>
+      <App />
+    </RouterProvider>
   </StrictMode>
 );
 
