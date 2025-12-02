@@ -5,9 +5,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ClientOnly } from "@/components/ClientOnly";
+import { ClientOnly } from "@/components/client-only";
 import { APITester } from "./APITester";
-import { Link } from "@/components/Link";
+import { Link } from "@/components/link";
 
 export default function HomePage() {
   return (

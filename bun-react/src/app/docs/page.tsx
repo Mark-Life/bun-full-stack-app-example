@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link } from "@/components/Link";
+import { Link } from "@/components/link";
 
 export const metadata = {
   title: "Documentation - Bun + React",
@@ -27,4 +27,3 @@ export default function DocsPage() {
     </Card>
   );
 }
-

@@ -23,7 +23,7 @@ export const Link = ({ href, children, className, onClick }: LinkProps) => {
   }, [currentPath, href]);
 
   const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+    e.preventDefault(); // TODO: what if click before js is loaded?
     navigate(href);
     onClick?.(e);
   };

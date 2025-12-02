@@ -17,6 +17,15 @@ interface RouterContext {
 const RouterContext = createContext<RouterContext | null>(null);
 
 /**
+ * Route params context
+ */
+interface RouteParamsContext {
+  params: Record<string, string>;
+}
+
+const RouteParamsContext = createContext<RouteParamsContext | null>(null);
+
+/**
  * Client-side router hook
  * Returns a default router context if RouterProvider is not available
  * This allows components to work during SSR and before RouterProvider mounts
@@ -38,6 +47,33 @@ export const useRouter = (): RouterContext => {
     };
   }
   return context;
+};
+
+/**
+ * Hook to access route parameters
+ */
+export const useParams = (): Record<string, string> => {
+  const context = useContext(RouteParamsContext);
+  return context?.params ?? {};
+};
+
+/**
+ * Route params provider component
+ */
+interface RouteParamsProviderProps {
+  children: ReactNode;
+  params: Record<string, string>;
+}
+
+export const RouteParamsProvider = ({
+  children,
+  params,
+}: RouteParamsProviderProps) => {
+  return (
+    <RouteParamsContext.Provider value={{ params }}>
+      {children}
+    </RouteParamsContext.Provider>
+  );
 };
 
 /**

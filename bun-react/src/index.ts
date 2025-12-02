@@ -2,6 +2,7 @@ import { serve } from "bun";
 import React from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { discoverRoutes, matchRoute, type RouteInfo } from "./lib/router";
+import { routesPlugin } from "./lib/routes-plugin";
 
 /**
  * Discover routes on startup
@@ -113,7 +114,7 @@ const buildHydrateBundle = async (): Promise<string> => {
   const tailwindPlugin = await import("bun-plugin-tailwind");
   const result = await Bun.build({
     entrypoints: ["./src/hydrate.tsx"],
-    plugins: [tailwindPlugin.default || tailwindPlugin],
+    plugins: [tailwindPlugin.default || tailwindPlugin, routesPlugin],
     target: "browser",
     minify: process.env.NODE_ENV === "production",
     sourcemap: process.env.NODE_ENV !== "production" ? "inline" : "none",
@@ -229,9 +230,9 @@ const server = serve({
       }
 
       // Try to match route
-      const routeInfo = matchRoute(pathname, routeTree.routes);
-      if (routeInfo) {
-        return renderRoute(routeInfo);
+      const matchResult = matchRoute(pathname, routeTree.routes);
+      if (matchResult) {
+        return renderRoute(matchResult.route);
       }
 
       // Fallback to 404 for unknown routes

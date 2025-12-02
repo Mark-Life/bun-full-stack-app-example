@@ -16,6 +16,8 @@ export interface RouteInfo {
   filePath: string;
   layoutPath?: string;
   parentLayouts: string[];
+  isDynamic?: boolean;
+  dynamicSegments?: string[];
 }
 
 export interface RouteTree {
@@ -38,12 +40,38 @@ const isLayoutFile = (filename: string): boolean => {
 };
 
 /**
- * Convert file path to URL route
+ * Extract dynamic segments from a path segment
+ * Returns the param name and whether it's a catch-all
+ */
+const extractDynamicSegment = (
+  segment: string
+): { name: string; isCatchAll: boolean } | null => {
+  const catchAllMatch = segment.match(/^\[\.\.\.(\w+)\]$/);
+  if (catchAllMatch) {
+    return { name: catchAllMatch[1]!, isCatchAll: true };
+  }
+  const dynamicMatch = segment.match(/^\[(\w+)\]$/);
+  if (dynamicMatch) {
+    return { name: dynamicMatch[1]!, isCatchAll: false };
+  }
+  return null;
+};
+
+/**
+ * Convert file path to URL route with dynamic segment support
  * app/page.tsx -> /
  * app/about/page.tsx -> /about
- * app/about/index.tsx -> /about
+ * app/blog/[slug]/page.tsx -> /blog/:slug
+ * app/docs/[...slug]/page.tsx -> /docs/*slug
  */
-const filePathToRoute = (filePath: string, appDir: string): string => {
+const filePathToRoute = (
+  filePath: string,
+  appDir: string
+): {
+  path: string;
+  dynamicSegments: string[];
+  isDynamic: boolean;
+} => {
   const relativePath = relative(appDir, filePath);
   const dir = dirname(relativePath);
   const filename = relativePath.split("/").pop() || "";
@@ -51,19 +79,38 @@ const filePathToRoute = (filePath: string, appDir: string): string => {
   // Remove file extension
   const routeSegment = filename.replace(/\.(tsx|ts|jsx|js)$/, "");
 
-  // If it's index.tsx or page.tsx, use the directory as the route
-  if (routeSegment === "index" || routeSegment === "page") {
-    if (dir === ".") {
-      return "/";
-    }
-    return `/${dir}`;
+  // Build route path from directory segments
+  const dirSegments = dir === "." ? [] : dir.split("/").filter(Boolean);
+  const allSegments = [...dirSegments];
+
+  // If it's not index.tsx or page.tsx, add the filename as a segment
+  if (routeSegment !== "index" && routeSegment !== "page") {
+    allSegments.push(routeSegment);
   }
 
-  // Otherwise, use the filename as part of the route
-  if (dir === ".") {
-    return `/${routeSegment}`;
+  // Process segments and convert dynamic patterns
+  const routeParts: string[] = [];
+  const dynamicSegments: string[] = [];
+  let isDynamic = false;
+
+  for (const segment of allSegments) {
+    const dynamicInfo = extractDynamicSegment(segment);
+    if (dynamicInfo) {
+      isDynamic = true;
+      dynamicSegments.push(dynamicInfo.name);
+      if (dynamicInfo.isCatchAll) {
+        routeParts.push(`*${dynamicInfo.name}`);
+      } else {
+        routeParts.push(`:${dynamicInfo.name}`);
+      }
+    } else {
+      routeParts.push(segment);
+    }
   }
-  return `/${dir}/${routeSegment}`;
+
+  const path = allSegments.length === 0 ? "/" : `/${routeParts.join("/")}`;
+
+  return { path, dynamicSegments, isDynamic };
 };
 
 /**
@@ -143,13 +190,19 @@ const scanDirectory = (
       scanDirectory(fullPath, appDir, routes, layouts);
     } else if (stat.isFile()) {
       if (isRouteFile(entry)) {
-        const routePath = filePathToRoute(fullPath, appDir);
+        const {
+          path: routePath,
+          dynamicSegments,
+          isDynamic,
+        } = filePathToRoute(fullPath, appDir);
         const { layoutPath, parentLayouts } = findLayouts(fullPath, appDir);
 
         const routeInfo: RouteInfo = {
           path: routePath,
           filePath: fullPath,
           parentLayouts,
+          isDynamic,
+          ...(dynamicSegments.length > 0 && { dynamicSegments }),
         };
         if (layoutPath) {
           routeInfo.layoutPath = layoutPath;
@@ -157,7 +210,7 @@ const scanDirectory = (
         routes.set(routePath, routeInfo);
       } else if (isLayoutFile(entry)) {
         const layoutDir = dirname(fullPath);
-        const layoutRoute = filePathToRoute(
+        const { path: layoutRoute } = filePathToRoute(
           join(layoutDir, "page.tsx"),
           appDir
         );
@@ -212,29 +265,93 @@ export const discoverRoutes = (appDir: string = "./src/app"): RouteTree => {
 };
 
 /**
- * Match a URL path to a route
+ * Match a route pattern against a URL path and extract params
+ */
+const matchPattern = (
+  pattern: string,
+  urlPath: string
+): { matched: boolean; params: Record<string, string> } => {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const urlParts = urlPath.split("/").filter(Boolean);
+
+  const params: Record<string, string> = {};
+
+  // Handle catch-all routes
+  if (
+    patternParts.length > 0 &&
+    patternParts[patternParts.length - 1]?.startsWith("*")
+  ) {
+    const catchAllParam = patternParts[patternParts.length - 1]!.slice(1);
+    if (urlParts.length >= patternParts.length - 1) {
+      const matchedParts = patternParts.slice(0, -1);
+      for (let i = 0; i < matchedParts.length; i++) {
+        const patternPart = matchedParts[i]!;
+        const urlPart = urlParts[i];
+
+        if (patternPart.startsWith(":")) {
+          params[patternPart.slice(1)] = urlPart || "";
+        } else if (patternPart !== urlPart) {
+          return { matched: false, params: {} };
+        }
+      }
+      // Catch-all captures the rest
+      params[catchAllParam] = urlParts.slice(matchedParts.length).join("/");
+      return { matched: true, params };
+    }
+    return { matched: false, params: {} };
+  }
+
+  // Regular dynamic route matching
+  if (patternParts.length !== urlParts.length) {
+    return { matched: false, params: {} };
+  }
+
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i]!;
+    const urlPart = urlParts[i];
+
+    if (patternPart.startsWith(":")) {
+      params[patternPart.slice(1)] = urlPart || "";
+    } else if (patternPart !== urlPart) {
+      return { matched: false, params: {} };
+    }
+  }
+
+  return { matched: true, params };
+};
+
+/**
+ * Match a URL path to a route and extract params
  */
 export const matchRoute = (
   urlPath: string,
   routes: Map<string, RouteInfo>
-): RouteInfo | null => {
+): { route: RouteInfo; params: Record<string, string> } | null => {
+  // Normalize URL path
+  const normalizedPath =
+    urlPath === "/" ? "/" : urlPath.replace(/\/$/, "") || "/";
+
   // Exact match first
-  if (routes.has(urlPath)) {
-    return routes.get(urlPath)!;
+  if (routes.has(normalizedPath)) {
+    const route = routes.get(normalizedPath)!;
+    return { route, params: {} };
   }
 
   // Try with trailing slash
-  const withSlash = urlPath.endsWith("/")
-    ? urlPath.slice(0, -1)
-    : `${urlPath}/`;
+  const withSlash = normalizedPath === "/" ? "/" : `${normalizedPath}/`;
   if (routes.has(withSlash)) {
-    return routes.get(withSlash)!;
+    const route = routes.get(withSlash)!;
+    return { route, params: {} };
   }
 
-  // Try without trailing slash
-  const withoutSlash = urlPath.endsWith("/") ? urlPath.slice(0, -1) : urlPath;
-  if (routes.has(withoutSlash)) {
-    return routes.get(withoutSlash)!;
+  // Try dynamic route matching
+  for (const [pattern, routeInfo] of routes.entries()) {
+    if (routeInfo.isDynamic) {
+      const { matched, params } = matchPattern(pattern, normalizedPath);
+      if (matched) {
+        return { route: routeInfo, params };
+      }
+    }
   }
 
   return null;

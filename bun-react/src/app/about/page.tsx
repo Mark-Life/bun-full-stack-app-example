@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link } from "@/components/Link";
+import { Link } from "@/components/link";
 
 export const metadata = {
   title: "About - Bun + React",
@@ -18,9 +18,7 @@ export default function AboutPage() {
             This is an example of a Next.js-style app router implemented with
             Bun and React.
           </p>
-          <p>
-            Features:
-          </p>
+          <p>Features:</p>
           <ul className="list-disc list-inside space-y-2 ml-4">
             <li>File-based routing with app directory</li>
             <li>Support for both index.tsx and page.tsx route files</li>
@@ -38,4 +36,3 @@ export default function AboutPage() {
     </div>
   );
 }
-

@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link } from "@/components/Link";
+import { Link } from "@/components/link";
 
 interface DocsLayoutProps {
   children: React.ReactNode;
@@ -35,4 +35,3 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     </div>
   );
 }
-
