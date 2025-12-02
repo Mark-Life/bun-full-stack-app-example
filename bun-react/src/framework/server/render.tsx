@@ -61,8 +61,10 @@ export const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
     // Build layout hierarchy
     // Layouts should be applied from root to leaf (outermost to innermost)
     // So we collect: [root, parent1, parent2, ..., direct]
-    const layouts: Array<{ component: React.ComponentType<any>; props?: any }> =
-      [];
+    const layouts: Array<{
+      component: React.ComponentType<Record<string, unknown>>;
+      props?: Record<string, unknown>;
+    }> = [];
 
     // Add parent layouts first (root to direct parent)
     for (const layoutPath of routeInfo.parentLayouts) {

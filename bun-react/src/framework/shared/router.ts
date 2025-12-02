@@ -55,12 +55,12 @@ const extractDynamicSegment = (
   segment: string
 ): { name: string; isCatchAll: boolean } | null => {
   const catchAllMatch = segment.match(/^\[\.\.\.(\w+)\]$/);
-  if (catchAllMatch) {
-    return { name: catchAllMatch[1]!, isCatchAll: true };
+  if (catchAllMatch?.[1]) {
+    return { name: catchAllMatch[1], isCatchAll: true };
   }
   const dynamicMatch = segment.match(/^\[(\w+)\]$/);
-  if (dynamicMatch) {
-    return { name: dynamicMatch[1]!, isCatchAll: false };
+  if (dynamicMatch?.[1]) {
+    return { name: dynamicMatch[1], isCatchAll: false };
   }
   return null;
 };
@@ -189,11 +189,14 @@ const findLayouts = (
   }
 
   if (allLayouts.length === 1) {
-    return {
-      layoutPath: allLayouts[0]!.path,
-      parentLayouts: [],
-      layoutTypes,
-    };
+    const layout = allLayouts[0];
+    if (layout) {
+      return {
+        layoutPath: layout.path,
+        parentLayouts: [],
+        layoutTypes,
+      };
+    }
   }
 
   const layoutPath = allLayouts[allLayouts.length - 1]?.path;
@@ -342,15 +345,14 @@ const matchPattern = (
   const params: Record<string, string> = {};
 
   // Handle catch-all routes
-  if (
-    patternParts.length > 0 &&
-    patternParts[patternParts.length - 1]?.startsWith("*")
-  ) {
-    const catchAllParam = patternParts[patternParts.length - 1]!.slice(1);
+  const lastPatternPart = patternParts[patternParts.length - 1];
+  if (patternParts.length > 0 && lastPatternPart?.startsWith("*")) {
+    const catchAllParam = lastPatternPart.slice(1);
     if (urlParts.length >= patternParts.length - 1) {
       const matchedParts = patternParts.slice(0, -1);
       for (let i = 0; i < matchedParts.length; i++) {
-        const patternPart = matchedParts[i]!;
+        const patternPart = matchedParts[i];
+        if (!patternPart) continue;
         const urlPart = urlParts[i];
 
         if (patternPart.startsWith(":")) {
@@ -372,7 +374,8 @@ const matchPattern = (
   }
 
   for (let i = 0; i < patternParts.length; i++) {
-    const patternPart = patternParts[i]!;
+    const patternPart = patternParts[i];
+    if (!patternPart) continue;
     const urlPart = urlParts[i];
 
     if (patternPart.startsWith(":")) {
@@ -397,16 +400,16 @@ export const matchRoute = (
     urlPath === "/" ? "/" : urlPath.replace(/\/$/, "") || "/";
 
   // Exact match first
-  if (routes.has(normalizedPath)) {
-    const route = routes.get(normalizedPath)!;
-    return { route, params: {} };
+  const exactRoute = routes.get(normalizedPath);
+  if (exactRoute) {
+    return { route: exactRoute, params: {} };
   }
 
   // Try with trailing slash
   const withSlash = normalizedPath === "/" ? "/" : `${normalizedPath}/`;
-  if (routes.has(withSlash)) {
-    const route = routes.get(withSlash)!;
-    return { route, params: {} };
+  const routeWithSlash = routes.get(withSlash);
+  if (routeWithSlash) {
+    return { route: routeWithSlash, params: {} };
   }
 
   // Try dynamic route matching

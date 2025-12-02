@@ -56,6 +56,7 @@ export const RootShell = ({
       <body>
         <div id="root">{children}</div>
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: here we are setting the route data
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(routeData),
           }}

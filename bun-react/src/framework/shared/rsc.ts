@@ -85,9 +85,11 @@ export const findClientBoundaries = async (
 
   // Simple regex to find imports (doesn't handle all edge cases)
   const importRegex = /import\s+.*\s+from\s+["']([^"']+)["']/g;
-  let match;
+  let match: RegExpExecArray | null = null;
 
-  while ((match = importRegex.exec(content)) !== null) {
+  while (true) {
+    match = importRegex.exec(content);
+    if (match === null) break;
     const importPath = match[1];
     if (importPath) {
       // Resolve relative imports
@@ -126,11 +128,13 @@ export const hasClientBoundariesSync = (filePath: string): boolean => {
 
   // Simple regex to find imports
   const importRegex = /import\s+.*\s+from\s+["']([^"']+)["']/g;
-  let match;
+  let match: RegExpExecArray | null = null;
 
   const { dirname, join } = require("path");
 
-  while ((match = importRegex.exec(content)) !== null) {
+  while (true) {
+    match = importRegex.exec(content);
+    if (match === null) break;
     const importPath = match[1];
     if (importPath) {
       // Resolve relative imports
