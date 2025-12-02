@@ -1,4 +1,4 @@
-import { useRouter } from "@/lib/client-router";
+import { useRouter } from "@/framework/client/router";
 import { type ReactNode, type MouseEvent, useState, useEffect } from "react";
 
 interface LinkProps {

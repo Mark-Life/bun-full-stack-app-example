@@ -42,6 +42,10 @@ bun start    # production
 
 ### Not Yet Implemented
 
+- [ ] **Public Assets Management** - `public/` folder for static assets (icons, images, fonts, etc.) automatically served at root path
+- [ ] **Typesafe API Route Definitions** - Type-safe API route handlers with request/response type inference
+- [ ] **Dynamic Route Demo** - Example page demonstrating dynamic route parameters (`[param]` and `[...param]`)
+- [ ] **Proxy (Middleware)** - Request/response middleware for authentication, logging, CORS, etc.
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Server Functions / Data Loaders** - `getServerSideProps`-style data fetching
 - [ ] **Static Site Generation (SSG)** - Build-time pre-rendering

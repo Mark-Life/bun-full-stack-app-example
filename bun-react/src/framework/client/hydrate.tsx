@@ -9,7 +9,7 @@
 
 import { StrictMode, Suspense, type ReactNode } from "react";
 import { hydrateRoot } from "react-dom/client";
-import { RouterProvider, RouteParamsProvider } from "./lib/client-router";
+import { RouterProvider, RouteParamsProvider } from "./router";
 import { routes, type RouteConfig } from "virtual:routes";
 
 // Validate routes are loaded

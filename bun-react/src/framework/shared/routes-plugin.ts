@@ -34,7 +34,9 @@ export const routesPlugin: BunPlugin = {
         type: "page" | "layout"
       ): string => {
         const parts = path
-          .replace(/^\.\/app\//, "")
+          .replace(/^~\//, "") // Remove ~/ alias
+          .replace(/^\.\/src\/app\//, "") // Remove ./src/app/ prefix
+          .replace(/^\.\/app\//, "") // Remove ./app/ prefix
           .replace(/\.(tsx|ts|jsx|js)$/, "")
           .split("/")
           .filter(Boolean);
@@ -65,8 +67,13 @@ export const routesPlugin: BunPlugin = {
 
       /**
        * Convert import path to be relative to project root
+       * Handles ~/ alias (maps to ./src/) and other path formats
        */
       const toImportPath = (filePath: string): string => {
+        // Handle ~/ alias (maps to ./src/)
+        if (filePath.startsWith("~/")) {
+          return filePath.replace("~/", "./src/");
+        }
         if (filePath.startsWith("./src/")) {
           return filePath;
         }
@@ -85,6 +92,7 @@ export const routesPlugin: BunPlugin = {
         return (
           layoutPath === "./app/layout.tsx" ||
           layoutPath === "./src/app/layout.tsx" ||
+          layoutPath === "~/app/layout.tsx" ||
           layoutPath.endsWith("/app/layout.tsx") ||
           layoutPath.endsWith("/src/app/layout.tsx")
         );

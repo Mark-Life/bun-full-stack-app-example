@@ -1,12 +1,20 @@
-import { serve } from "bun";
 import React from "react";
 import { renderToReadableStream } from "react-dom/server";
-import {
-  discoverRoutes,
-  matchRoute,
-  type RouteInfo,
-} from "./framework/shared/router";
-import { routesPlugin } from "./framework/shared/routes-plugin";
+import type { RouteInfo } from "@/framework/shared/router";
+
+/**
+ * Resolve import path, converting ~/ alias to actual file path
+ * ~/ maps to ./src/ relative to project root
+ * Since we're in framework/server/, we need to go up to src/
+ */
+const resolveImportPath = (importPath: string): string => {
+  if (importPath.startsWith("~/")) {
+    // Convert ~/app/page.tsx to ../../app/page.tsx (from framework/server/ to src/)
+    const pathWithoutAlias = importPath.slice(2); // Remove ~/
+    return `../../${pathWithoutAlias}`;
+  }
+  return importPath;
+};
 
 /**
  * Check if a route has any client components (page, layouts, or imported)
@@ -16,7 +24,7 @@ import { routesPlugin } from "./framework/shared/routes-plugin";
  * - Any layout is a client component
  * - The page imports any client components (client boundaries)
  */
-const hasClientComponents = (routeInfo: RouteInfo): boolean => {
+export const hasClientComponents = (routeInfo: RouteInfo): boolean => {
   // Check if page is a client component
   if (routeInfo.isClientComponent) {
     return true;
@@ -37,18 +45,13 @@ const hasClientComponents = (routeInfo: RouteInfo): boolean => {
 };
 
 /**
- * Discover routes on startup
- */
-const routeTree = discoverRoutes("./src/app");
-console.log(`📁 Discovered ${routeTree.routes.size} routes`);
-
-/**
  * Render a route with its layout hierarchy
  */
-const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
+export const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
   try {
     // Import the page component
-    const pageModule = await import(routeInfo.filePath);
+    const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+    const pageModule = await import(resolvedPagePath);
     const PageComponent = pageModule.default;
 
     if (!PageComponent) {
@@ -64,7 +67,8 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
     // Add parent layouts first (root to direct parent)
     for (const layoutPath of routeInfo.parentLayouts) {
       try {
-        const layoutModule = await import(layoutPath);
+        const resolvedLayoutPath = resolveImportPath(layoutPath);
+        const layoutModule = await import(resolvedLayoutPath);
         const LayoutComponent = layoutModule.default;
         if (LayoutComponent) {
           layouts.push({ component: LayoutComponent });
@@ -77,7 +81,8 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
     // Add direct layout last (closest to the page)
     if (routeInfo.layoutPath) {
       try {
-        const layoutModule = await import(routeInfo.layoutPath);
+        const resolvedLayoutPath = resolveImportPath(routeInfo.layoutPath);
+        const layoutModule = await import(resolvedLayoutPath);
         const LayoutComponent = layoutModule.default;
         if (LayoutComponent) {
           layouts.push({ component: LayoutComponent });
@@ -184,173 +189,3 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
     );
   }
 };
-
-/**
- * Build route handlers dynamically
- */
-const buildRouteHandlers = () => {
-  const handlers: Record<string, () => Promise<Response>> = {};
-
-  // Add handlers for each discovered route
-  for (const [path, routeInfo] of routeTree.routes.entries()) {
-    handlers[path] = async () => renderRoute(routeInfo);
-  }
-
-  return handlers;
-};
-
-/**
- * Build and cache the hydration bundle
- */
-let hydrateBundleCache: string | null = null;
-
-const buildHydrateBundle = async (): Promise<string> => {
-  if (hydrateBundleCache && process.env.NODE_ENV === "production") {
-    return hydrateBundleCache;
-  }
-
-  const tailwindPlugin = await import("bun-plugin-tailwind");
-  const result = await Bun.build({
-    entrypoints: ["./src/hydrate.tsx"],
-    plugins: [tailwindPlugin.default || tailwindPlugin, routesPlugin],
-    target: "browser",
-    minify: process.env.NODE_ENV === "production",
-    sourcemap: process.env.NODE_ENV !== "production" ? "inline" : "none",
-  });
-
-  if (!result.success) {
-    console.error("Failed to build hydrate bundle:", result.logs);
-    throw new Error("Failed to build hydrate bundle");
-  }
-
-  const output = result.outputs[0];
-  if (!output) {
-    throw new Error("No output from hydrate bundle build");
-  }
-
-  const bundle = await output.text();
-  hydrateBundleCache = bundle;
-  return bundle;
-};
-
-const server = serve({
-  routes: {
-    "/hydrate.js": async () => {
-      try {
-        const bundle = await buildHydrateBundle();
-        return new Response(bundle, {
-          headers: { "Content-Type": "application/javascript" },
-        });
-      } catch (error) {
-        console.error("Error serving hydrate bundle:", error);
-        return new Response(
-          "console.error('Failed to load hydration bundle')",
-          {
-            headers: { "Content-Type": "application/javascript" },
-            status: 500,
-          }
-        );
-      }
-    },
-
-    "/index.css": async () => {
-      try {
-        const tailwindPlugin = await import("bun-plugin-tailwind");
-        const bundled = await Bun.build({
-          entrypoints: ["./src/index.css"],
-          plugins: [tailwindPlugin.default || tailwindPlugin],
-          target: "browser",
-        });
-
-        if (bundled.success && bundled.outputs && bundled.outputs.length > 0) {
-          const output = bundled.outputs[0];
-          if (output) {
-            const css = await output.text();
-            return new Response(css, {
-              headers: { "Content-Type": "text/css" },
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Failed to bundle CSS:", error);
-      }
-
-      // Fallback: return raw file if bundling fails
-      const file = Bun.file("./src/index.css");
-      return new Response(file, {
-        headers: { "Content-Type": "text/css" },
-      });
-    },
-
-    "/logo.svg": Bun.file("./src/logo.svg"),
-    "/react.svg": Bun.file("./src/react.svg"),
-
-    // API routes
-    "/api/hello": {
-      async GET() {
-        return Response.json({
-          message: "Hello, world!",
-          method: "GET",
-        });
-      },
-      async PUT() {
-        return Response.json({
-          message: "Hello, world!",
-          method: "PUT",
-        });
-      },
-    },
-
-    "/api/hello/:name": async (req) => {
-      const name = req.params.name;
-      return Response.json({
-        message: `Hello, ${name}!`,
-      });
-    },
-
-    // App routes - try to match discovered routes first
-    "/*": async (req) => {
-      const url = new URL(req.url);
-      const pathname = url.pathname;
-
-      // Skip paths handled by other routes (API and static assets)
-      // These are handled by their specific route handlers above
-      const skipPaths = [
-        "/api/",
-        "/index.css",
-        "/hydrate.js",
-        "/logo.svg",
-        "/react.svg",
-      ];
-      if (skipPaths.some((p) => pathname.startsWith(p))) {
-        // Let other handlers deal with these
-        return new Response("Not found", { status: 404 });
-      }
-
-      // Try to match route
-      const matchResult = matchRoute(pathname, routeTree.routes);
-      if (matchResult) {
-        return renderRoute(matchResult.route);
-      }
-
-      // Fallback to 404 for unknown routes
-      return new Response("Page not found", {
-        status: 404,
-        headers: { "Content-Type": "text/html" },
-      });
-    },
-
-    // Add discovered route handlers
-    ...buildRouteHandlers(),
-  },
-
-  development: process.env.NODE_ENV !== "production" && {
-    // Enable browser hot reloading in development
-    hmr: true,
-
-    // Echo console logs from the browser to the server
-    console: true,
-  },
-});
-
-console.log(`🚀 Server running at ${server.url}`);

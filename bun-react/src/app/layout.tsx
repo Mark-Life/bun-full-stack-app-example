@@ -1,4 +1,4 @@
-import { RootShell, type Metadata } from "./root-shell";
+import { RootShell, type Metadata } from "~/framework/shared/root-shell";
 import "../index.css";
 
 export const metadata: Metadata = {

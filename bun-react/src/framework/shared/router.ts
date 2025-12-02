@@ -4,7 +4,7 @@ import {
   hasUseClientDirective,
   hasClientBoundariesSync,
   type ComponentType,
-} from "./rsc";
+} from "~/framework/shared/rsc";
 
 /**
  * Route file names that create routes
@@ -275,13 +275,18 @@ const scanDirectory = (
 };
 
 /**
- * Convert absolute file path to import path
+ * Convert absolute file path to import path using ~/ alias
+ * This allows imports to work from any location in the codebase
  */
 const toImportPath = (filePath: string, baseDir: string): string => {
   // Convert absolute path to relative path from src/
   const relativePath = relative(baseDir, filePath);
-  // Remove leading ./ and ensure it starts with ./
-  return relativePath.startsWith("./") ? relativePath : `./${relativePath}`;
+  // Remove leading ./ if present
+  const cleanPath = relativePath.startsWith("./")
+    ? relativePath.slice(2)
+    : relativePath;
+  // Use ~/ alias which maps to ./src/* in tsconfig
+  return `~/${cleanPath}`;
 };
 
 /**

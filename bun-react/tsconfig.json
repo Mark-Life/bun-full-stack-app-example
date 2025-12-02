@@ -24,7 +24,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "virtual:routes": ["./src/virtual-routes.ts"]
+      "~/*": ["./src/*"],
+      "virtual:routes": ["src/framework/shared/virtual-routes.ts"]
     },
     "strictNullChecks": true
   },
