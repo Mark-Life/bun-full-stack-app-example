@@ -15,6 +15,8 @@ export interface RouteData {
   routePath: string;
   /** Whether the page tree has any client components that need hydration */
   hasClientComponents: boolean;
+  /** Page data from loader (for server component pages that need hydration) */
+  pageData?: unknown;
 }
 
 interface RootShellProps {
@@ -23,6 +25,8 @@ interface RootShellProps {
   routePath?: string;
   /** Whether this route has client components needing hydration */
   hasClientComponents?: boolean;
+  /** Page data from loader (for hydration) */
+  pageData?: unknown;
 }
 
 export const RootShell = ({
@@ -30,6 +34,7 @@ export const RootShell = ({
   metadata,
   routePath,
   hasClientComponents = true,
+  pageData,
 }: RootShellProps) => {
   const title = metadata?.title || "Bun + React";
   const description =
@@ -41,6 +46,7 @@ export const RootShell = ({
   const routeData: RouteData = {
     routePath: routePath || "/",
     hasClientComponents,
+    ...(pageData !== undefined && { pageData }),
   };
 
   return (

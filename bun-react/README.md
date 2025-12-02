@@ -77,6 +77,10 @@ bun start    # production
 ### Not Yet Implemented
 
 - [ ] **`loading.tsx`** - Route-level loading states
+- [ ] **Partial Prerendering (PPR) / Cache Components** - Static shell generation with dynamic streaming
+  - Allows creating static shells (e.g., headers with H1 and buttons) that are pre-rendered at build time
+  - Dynamic components below the static shell stream via SSR
+  - Combines benefits of static generation (fast initial shell) with dynamic content streaming
 
 ## Architecture
 
@@ -101,6 +105,7 @@ Request → Match route → Render (server + client components)
    ```
 3. Server components can import client components (client boundaries)
 4. **Async Server Components** = Can use Suspense for progressive streaming
+5. **Layouts** = Always included in hydration (preserves DOM structure during hydration)
 
 ### Suspense Streaming
 

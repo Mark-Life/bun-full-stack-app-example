@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function DashboardSettings() {
+export default function ClientNavSettingsPage() {
   return (
     <div className="grid w-full gap-6">
       <div>
