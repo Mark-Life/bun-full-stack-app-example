@@ -24,12 +24,33 @@ export const APITester = clientComponent(() => {
       const endpoint = formData.get("endpoint") as string;
       const url = new URL(endpoint, location.href);
       const method = formData.get("method") as string;
-      const res = await fetch(url, { method });
 
-      const data = await res.json();
-      responseInputRef.current!.value = JSON.stringify(data, null, 2);
+      const fetchOptions: RequestInit = { method };
+
+      // Add body for PUT/POST/PATCH
+      if (["PUT", "POST", "PATCH"].includes(method)) {
+        fetchOptions.headers = { "Content-Type": "application/json" };
+        fetchOptions.body = JSON.stringify({ name: "Test" });
+      }
+
+      const res = await fetch(url, fetchOptions);
+
+      const contentType = res.headers.get("content-type");
+      if (contentType?.includes("application/json")) {
+        const data = await res.json();
+        if (responseInputRef.current) {
+          responseInputRef.current.value = JSON.stringify(data, null, 2);
+        }
+      } else {
+        const text = await res.text();
+        if (responseInputRef.current) {
+          responseInputRef.current.value = `Status: ${res.status}\n\n${text}`;
+        }
+      }
     } catch (error) {
-      responseInputRef.current!.value = String(error);
+      if (responseInputRef.current) {
+        responseInputRef.current.value = String(error);
+      }
     }
   };
 

@@ -1,5 +1,8 @@
 import { serve } from "bun";
 import { routesPlugin } from "@/framework/shared/routes-plugin";
+import { api } from "~/api";
+import { applyMiddleware } from "~/framework/shared/middleware";
+import middlewareConfig from "~/middleware";
 import { discoverPublicAssets } from "./public";
 import { buildRouteHandlers, matchAndRenderRoute } from "./routes";
 
@@ -45,6 +48,18 @@ const publicAssetPaths = Object.keys(publicAssets);
 if (publicAssetPaths.length > 0) {
   console.log(`📦 Discovered ${publicAssetPaths.length} public assets`);
 }
+
+/**
+ * Get typed API handlers
+ */
+const apiHandlers = api.handlers();
+console.log(`🔌 Loaded ${Object.keys(apiHandlers).length} API routes`);
+console.log("API routes:", Object.keys(apiHandlers));
+
+/**
+ * Apply middleware to API handlers
+ */
+const wrappedApiHandlers = applyMiddleware(middlewareConfig, apiHandlers);
 
 const server = serve({
   routes: {
@@ -98,28 +113,8 @@ const server = serve({
     // Public assets (discovered from src/public/)
     ...publicAssets,
 
-    // API routes
-    "/api/hello": {
-      async GET() {
-        return Response.json({
-          message: "Hello, world!",
-          method: "GET",
-        });
-      },
-      async PUT() {
-        return Response.json({
-          message: "Hello, world!",
-          method: "PUT",
-        });
-      },
-    },
-
-    "/api/hello/:name": async (req) => {
-      const name = req.params.name;
-      return Response.json({
-        message: `Hello, ${name}!`,
-      });
-    },
+    // Typed API routes (with middleware applied)
+    ...wrappedApiHandlers,
 
     // App routes - try to match discovered routes first
     "/*": async (req) => {
@@ -142,7 +137,7 @@ const server = serve({
       // Try to match route
       const response = matchAndRenderRoute(pathname);
       if (response) {
-        return response;
+        return await response;
       }
 
       // Fallback to 404 for unknown routes

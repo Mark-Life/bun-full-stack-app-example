@@ -22,7 +22,13 @@
         "noConsole": "off"
       },
       "style": {
-        "noMagicNumbers": "off"
+        "noMagicNumbers": "off",
+        // prefer interface over type for object shapes
+        "useConsistentTypeDefinitions": {
+          "options": {
+            "style": "interface"
+          }
+        }
       },
       "complexity": {
         "useLiteralKeys": "off"
