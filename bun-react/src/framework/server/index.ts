@@ -7,7 +7,12 @@ import { generateRouteTypes } from "~/framework/shared/generate-route-types";
 import { applyMiddleware } from "~/framework/shared/middleware";
 import middlewareConfig from "~/middleware";
 import { discoverPublicAssets } from "./public";
-import { matchAndRenderRoute, rediscoverRoutes } from "./routes";
+import { renderRoute } from "./render";
+import {
+  getNotFoundRouteInfo,
+  matchAndRenderRoute,
+  rediscoverRoutes,
+} from "./routes";
 
 /**
  * Build and cache the hydration bundle
@@ -188,6 +193,16 @@ const serverConfig = {
         return await response;
       }
 
+      // Try to render custom not-found component
+      const notFoundRouteInfo = getNotFoundRouteInfo();
+      if (notFoundRouteInfo) {
+        const notFoundResponse = await renderRoute(notFoundRouteInfo);
+        return new Response(notFoundResponse.body, {
+          status: 404,
+          headers: notFoundResponse.headers,
+        });
+      }
+
       // Fallback to 404 for unknown routes
       return new Response("Page not found", {
         status: 404,
@@ -359,6 +374,16 @@ const reloadRoutes = async (): Promise<void> => {
             return await response;
           }
 
+          // Try to render custom not-found component
+          const notFoundRouteInfo = getNotFoundRouteInfo();
+          if (notFoundRouteInfo) {
+            const notFoundResponse = await renderRoute(notFoundRouteInfo);
+            return new Response(notFoundResponse.body, {
+              status: 404,
+              headers: notFoundResponse.headers,
+            });
+          }
+
           // Fallback to 404 for unknown routes
           return new Response("Page not found", {
             status: 404,
@@ -420,11 +445,12 @@ if (process.env.NODE_ENV !== "production") {
           return;
         }
 
-        // Watch for page.tsx, layout.tsx, and index.tsx files
+        // Watch for page.tsx, layout.tsx, index.tsx, and not-found.tsx files
         const isRouteFile =
           filename.endsWith("page.tsx") ||
           filename.endsWith("layout.tsx") ||
-          filename.endsWith("index.tsx");
+          filename.endsWith("index.tsx") ||
+          filename.endsWith("not-found.tsx");
 
         if (isRouteFile) {
           if (eventType === "change") {

@@ -1,9 +1,24 @@
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import {
   discoverRoutes,
   matchRoute,
+  type RouteInfo,
   type RouteTree,
 } from "@/framework/shared/router";
+import {
+  extractPageType,
+  hasGenerateParams,
+  hasLoader,
+} from "~/framework/shared/page";
+import {
+  type ComponentType,
+  hasClientBoundariesSync,
+  hasUseClientDirective,
+} from "~/framework/shared/rsc";
 import { renderRoute } from "./render";
+
+const LAYOUT_FILE = "layout.tsx";
 
 /**
  * Mutable route tree that can be updated during development
@@ -37,6 +52,82 @@ export const buildRouteHandlers = () => {
   }
 
   return handlers;
+};
+
+/**
+ * Convert absolute file path to import path using ~/ alias
+ */
+const toImportPath = (filePath: string, baseDir: string): string => {
+  const relativePath = relative(baseDir, filePath);
+  const cleanPath = relativePath.startsWith("./")
+    ? relativePath.slice(2)
+    : relativePath;
+  return `~/${cleanPath}`;
+};
+
+/**
+ * Find layouts for not-found page (only root layout)
+ */
+const findNotFoundLayouts = (
+  appDir: string,
+  srcDir: string
+): {
+  layoutPath?: string;
+  parentLayouts: string[];
+  layoutTypes: ComponentType[];
+} => {
+  const rootLayout = join(appDir, LAYOUT_FILE);
+  if (existsSync(rootLayout)) {
+    const isClient = hasUseClientDirective(rootLayout);
+    return {
+      layoutPath: toImportPath(rootLayout, srcDir),
+      parentLayouts: [],
+      layoutTypes: [isClient ? "client" : "server"],
+    };
+  }
+  return { parentLayouts: [], layoutTypes: [] };
+};
+
+/**
+ * Get RouteInfo for not-found.tsx if it exists
+ */
+export const getNotFoundRouteInfo = (): RouteInfo | null => {
+  const appDir = join(process.cwd(), "src/app");
+  const srcDir = join(process.cwd(), "src");
+  const notFoundPath = join(appDir, "not-found.tsx");
+
+  if (!existsSync(notFoundPath)) {
+    return null;
+  }
+
+  const { layoutPath, parentLayouts, layoutTypes } = findNotFoundLayouts(
+    appDir,
+    srcDir
+  );
+
+  const isClientComponent = hasUseClientDirective(notFoundPath);
+  const hasClientBoundaries = hasClientBoundariesSync(notFoundPath);
+  const pageType = extractPageType(notFoundPath);
+  const hasStaticParams = hasGenerateParams(notFoundPath);
+  const hasLoaderFn = hasLoader(notFoundPath);
+
+  const routeInfo: RouteInfo = {
+    path: "/not-found", // Dummy path, not used for routing
+    filePath: toImportPath(notFoundPath, srcDir),
+    parentLayouts,
+    isClientComponent,
+    layoutTypes,
+    hasClientBoundaries,
+    pageType,
+    hasStaticParams,
+    hasLoader: hasLoaderFn,
+  };
+
+  if (layoutPath) {
+    routeInfo.layoutPath = layoutPath;
+  }
+
+  return routeInfo;
 };
 
 /**

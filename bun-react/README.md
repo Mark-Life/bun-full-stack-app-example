@@ -59,12 +59,16 @@ bun start    # production
   - `generateParams` for static dynamic routes
   - Pre-rendered HTML served in production, SSR fallback
 
+- [x] **404 Page** - Custom not-found component (`not-found.tsx`)
+  - Place `not-found.tsx` in `src/app/` directory
+  - Supports layouts, SSR, and client components
+  - Automatically returns HTTP 404 status
+
 ### Not Yet Implemented
 
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Incremental Static Regeneration (ISR)** - On-demand revalidation
 - [ ] **Client-side Navigation** - Currently full page reload. add functionality to use SPA-style `pushState`
-- [ ] **404 page**
 
 ## Architecture
 
@@ -284,6 +288,35 @@ dist/
 ```
 
 In production, static HTML is served directly. Dynamic pages fall back to SSR.
+
+#### 404 Page (Not Found)
+
+Create a custom 404 page by adding `not-found.tsx` to the app directory. This component will be rendered when routes are not found, with full SSR and layout support.
+
+**Custom 404 Page**
+
+```typescript
+// app/not-found.tsx
+import { Link } from "@/components/link";
+
+export default function NotFound() {
+  return (
+    <div className="container mx-auto p-8 text-center">
+      <h1 className="mb-4 text-4xl font-bold">404</h1>
+      <p className="mb-8 text-muted-foreground">Page not found</p>
+      <Link href="/" className="text-blue-600 hover:underline">
+        Go back home
+      </Link>
+    </div>
+  );
+}
+```
+
+The `not-found.tsx` component:
+- Inherits layouts from the root layout (`app/layout.tsx`)
+- Supports both server and client components
+- Receives no props (no params or data)
+- Returns HTTP status 404 automatically
 
 ---
 
