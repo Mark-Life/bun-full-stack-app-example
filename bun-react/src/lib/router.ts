@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "fs";
 import { join, relative, dirname } from "path";
+import { hasUseClientDirective, type ComponentType } from "./rsc";
 
 /**
  * Route file names that create routes
@@ -18,6 +19,10 @@ export interface RouteInfo {
   parentLayouts: string[];
   isDynamic?: boolean;
   dynamicSegments?: string[];
+  /** Whether the page component is a client component ("use client") */
+  isClientComponent: boolean;
+  /** Whether each layout is a client component (parallel to parentLayouts + layoutPath) */
+  layoutTypes: ComponentType[];
 }
 
 export interface RouteTree {
@@ -114,20 +119,36 @@ const filePathToRoute = (
 };
 
 /**
+ * Layout info with component type
+ */
+interface LayoutInfo {
+  path: string;
+  isClient: boolean;
+}
+
+/**
  * Find all layout files in the path hierarchy
  * Returns layouts in order from root to leaf (outermost to innermost)
+ * Also determines if each layout is a client component
  */
 const findLayouts = (
   filePath: string,
   appDir: string
-): { layoutPath?: string; parentLayouts: string[] } => {
-  const allLayouts: string[] = [];
+): {
+  layoutPath?: string;
+  parentLayouts: string[];
+  layoutTypes: ComponentType[];
+} => {
+  const allLayouts: LayoutInfo[] = [];
   let currentDir = dirname(filePath);
 
   // Check root layout first
   const rootLayout = join(appDir, LAYOUT_FILE);
   if (existsSync(rootLayout)) {
-    allLayouts.push(rootLayout);
+    allLayouts.push({
+      path: rootLayout,
+      isClient: hasUseClientDirective(rootLayout),
+    });
   }
 
   // Walk up the directory tree from route's directory to app directory
@@ -141,29 +162,44 @@ const findLayouts = (
     }
 
     const layoutFile = join(currentDir, LAYOUT_FILE);
-    if (existsSync(layoutFile) && !allLayouts.includes(layoutFile)) {
-      allLayouts.push(layoutFile);
+    if (
+      existsSync(layoutFile) &&
+      !allLayouts.some((l) => l.path === layoutFile)
+    ) {
+      allLayouts.push({
+        path: layoutFile,
+        isClient: hasUseClientDirective(layoutFile),
+      });
     }
     currentDir = dirname(currentDir);
   }
 
+  // Build layout types array (maps to parentLayouts + layoutPath order)
+  const layoutTypes: ComponentType[] = allLayouts.map((l) =>
+    l.isClient ? "client" : "server"
+  );
+
   // The last layout is the direct layout (closest to the route)
   // All others are parent layouts
   if (allLayouts.length === 0) {
-    return { parentLayouts: [] };
+    return { parentLayouts: [], layoutTypes: [] };
   }
 
   if (allLayouts.length === 1) {
-    return { layoutPath: allLayouts[0]!, parentLayouts: [] };
+    return {
+      layoutPath: allLayouts[0]!.path,
+      parentLayouts: [],
+      layoutTypes,
+    };
   }
 
-  const layoutPath = allLayouts[allLayouts.length - 1];
-  const parentLayouts = allLayouts.slice(0, -1);
+  const layoutPath = allLayouts[allLayouts.length - 1]?.path;
+  const parentLayouts = allLayouts.slice(0, -1).map((l) => l.path);
 
   if (layoutPath) {
-    return { layoutPath, parentLayouts };
+    return { layoutPath, parentLayouts, layoutTypes };
   }
-  return { parentLayouts };
+  return { parentLayouts, layoutTypes };
 };
 
 /**
@@ -195,13 +231,21 @@ const scanDirectory = (
           dynamicSegments,
           isDynamic,
         } = filePathToRoute(fullPath, appDir);
-        const { layoutPath, parentLayouts } = findLayouts(fullPath, appDir);
+        const { layoutPath, parentLayouts, layoutTypes } = findLayouts(
+          fullPath,
+          appDir
+        );
+
+        // Check if the page itself is a client component
+        const isClientComponent = hasUseClientDirective(fullPath);
 
         const routeInfo: RouteInfo = {
           path: routePath,
           filePath: fullPath,
           parentLayouts,
           isDynamic,
+          isClientComponent,
+          layoutTypes,
           ...(dynamicSegments.length > 0 && { dynamicSegments }),
         };
         if (layoutPath) {
@@ -254,9 +298,17 @@ export const discoverRoutes = (appDir: string = "./src/app"): RouteTree => {
       parentLayouts: routeInfo.parentLayouts.map((layoutPath) =>
         toImportPath(layoutPath, srcDir)
       ),
+      isClientComponent: routeInfo.isClientComponent,
+      layoutTypes: routeInfo.layoutTypes,
     };
     if (routeInfo.layoutPath) {
       updatedRouteInfo.layoutPath = toImportPath(routeInfo.layoutPath, srcDir);
+    }
+    if (routeInfo.isDynamic !== undefined) {
+      updatedRouteInfo.isDynamic = routeInfo.isDynamic;
+    }
+    if (routeInfo.dynamicSegments !== undefined) {
+      updatedRouteInfo.dynamicSegments = routeInfo.dynamicSegments;
     }
     routes.set(path, updatedRouteInfo);
   }

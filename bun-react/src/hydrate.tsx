@@ -1,9 +1,13 @@
 /**
  * Client-side hydration entry point
  * This script hydrates the SSR-rendered content and enables interactivity
+ *
+ * RSC Support:
+ * - Server components: Static HTML, no hydration needed
+ * - Client components: Full hydration with React
  */
 
-import { StrictMode, type ReactNode } from "react";
+import { StrictMode, Suspense, type ReactNode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { RouterProvider, RouteParamsProvider } from "./lib/client-router";
 import { routes, type RouteConfig } from "virtual:routes";
@@ -74,25 +78,25 @@ const matchPattern = (
  */
 const matchClientRoute = (
   urlPath: string,
-  routes: Record<string, RouteConfig>
+  routeMap: Record<string, RouteConfig>
 ): { route: RouteConfig; params: Record<string, string> } | null => {
   // Normalize URL path
   const normalizedPath =
     urlPath === "/" ? "/" : urlPath.replace(/\/$/, "") || "/";
 
   // Exact match first
-  if (routes[normalizedPath]) {
-    return { route: routes[normalizedPath]!, params: {} };
+  if (routeMap[normalizedPath]) {
+    return { route: routeMap[normalizedPath]!, params: {} };
   }
 
   // Try with trailing slash
   const withSlash = normalizedPath === "/" ? "/" : `${normalizedPath}/`;
-  if (routes[withSlash]) {
-    return { route: routes[withSlash]!, params: {} };
+  if (routeMap[withSlash]) {
+    return { route: routeMap[withSlash]!, params: {} };
   }
 
   // Try dynamic route matching
-  for (const [pattern, routeConfig] of Object.entries(routes)) {
+  for (const [pattern, routeConfig] of Object.entries(routeMap)) {
     if (routeConfig.isDynamic) {
       const { matched, params } = matchPattern(pattern, normalizedPath);
       if (matched) {
@@ -107,16 +111,45 @@ const matchClientRoute = (
 /**
  * Get route data embedded in the page
  */
-const getRouteData = (): { routePath: string } => {
+const getRouteData = (): {
+  routePath: string;
+  hasClientComponents: boolean;
+} => {
   const script = document.getElementById("__ROUTE_DATA__");
   if (script?.textContent) {
     try {
-      return JSON.parse(script.textContent) as { routePath: string };
+      return JSON.parse(script.textContent) as {
+        routePath: string;
+        hasClientComponents: boolean;
+      };
     } catch {
       // Ignore parse errors
     }
   }
-  return { routePath: window.location.pathname };
+  return { routePath: window.location.pathname, hasClientComponents: true };
+};
+
+/**
+ * Check if a route needs hydration
+ * Returns true if the page or any layout is a client component
+ */
+const needsHydration = (route: RouteConfig): boolean => {
+  // If page is a client component, needs hydration
+  if (route.componentType === "client") {
+    return true;
+  }
+
+  // If any layout is a client component, needs hydration
+  if (route.layoutType === "client") {
+    return true;
+  }
+
+  // Check parent layout types
+  if (route.parentLayoutTypes?.some((type) => type === "client")) {
+    return true;
+  }
+
+  return false;
 };
 
 /**
@@ -129,7 +162,7 @@ const hydrate = () => {
     return;
   }
 
-  const { routePath } = getRouteData();
+  const { routePath, hasClientComponents } = getRouteData();
   const matchResult = matchClientRoute(routePath, routes);
 
   if (!matchResult) {
@@ -145,11 +178,28 @@ const hydrate = () => {
     return;
   }
 
+  // Check if route needs hydration (has client components)
+  if (!needsHydration(matchResult.route) && !hasClientComponents) {
+    console.log(
+      `[RSC] Route "${routePath}" is a server component - no hydration needed`
+    );
+    return;
+  }
+
   hydrateRoute(matchResult.route, matchResult.params, root);
 };
 
 /**
  * Hydrate a specific route
+ *
+ * RSC Strategy:
+ * - All pages are bundled for the client (server and client components)
+ * - Server component pages may contain client component imports (boundaries)
+ * - We hydrate the full tree - React will match the server-rendered HTML
+ * - Client components within server components will become interactive
+ *
+ * The componentType flag indicates the page's own type, but even server
+ * component pages need hydration for their client component children.
  */
 const hydrateRoute = (
   route: RouteConfig,
@@ -160,28 +210,47 @@ const hydrateRoute = (
   const LayoutComponent = route.layout;
   const ParentLayouts = route.parentLayouts || [];
 
+  if (route.componentType === "server") {
+    console.log(
+      "[RSC] Server component page - hydrating for client boundaries"
+    );
+  }
+
   // Build component tree with layouts
   // Apply layouts from outermost to innermost (parentLayouts -> layout -> page)
   // Note: Root layout (app/layout.tsx) is excluded from routes by the plugin
   // since it wraps RootShell which renders <html> - already in the DOM
-  let pageContent: ReactNode = <PageComponent />;
+  let pageContent: ReactNode = (
+    <Suspense fallback={null}>
+      <PageComponent />
+    </Suspense>
+  );
 
-  // Apply direct layout if present
-  if (LayoutComponent) {
-    pageContent = <LayoutComponent>{pageContent}</LayoutComponent>;
+  // Apply direct layout if present and is a client component
+  if (LayoutComponent && route.layoutType === "client") {
+    pageContent = (
+      <Suspense fallback={null}>
+        <LayoutComponent>{pageContent}</LayoutComponent>
+      </Suspense>
+    );
   }
 
-  // Apply parent layouts (outermost first)
+  // Apply parent layouts (outermost first) - only client layouts
+  const parentLayoutTypes = route.parentLayoutTypes || [];
   for (let i = ParentLayouts.length - 1; i >= 0; i--) {
     const ParentLayout = ParentLayouts[i];
-    if (ParentLayout) {
-      pageContent = <ParentLayout>{pageContent}</ParentLayout>;
+    const layoutType = parentLayoutTypes[i];
+
+    if (ParentLayout && layoutType === "client") {
+      pageContent = (
+        <Suspense fallback={null}>
+          <ParentLayout>{pageContent}</ParentLayout>
+        </Suspense>
+      );
     }
   }
 
   // Wrap with params provider and router
-  // Note: No Suspense during hydration - components are already rendered on server
-  // Suspense is only needed for client-side navigation with lazy loading
   const content = (
     <StrictMode>
       <RouterProvider>

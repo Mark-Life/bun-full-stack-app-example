@@ -5,6 +5,30 @@ import { discoverRoutes, matchRoute, type RouteInfo } from "./lib/router";
 import { routesPlugin } from "./lib/routes-plugin";
 
 /**
+ * Check if a route has any client components (page or layouts)
+ *
+ * Note: This currently only checks the page/layout files themselves.
+ * A server component page may still import client components (client boundaries).
+ * For now, we default to true to ensure hydration happens for such cases.
+ * Future improvement: scan imports to detect client boundaries.
+ */
+const hasClientComponents = (routeInfo: RouteInfo): boolean => {
+  // Check if page is a client component
+  if (routeInfo.isClientComponent) {
+    return true;
+  }
+
+  // Check if any layout is a client component
+  if (routeInfo.layoutTypes.some((type) => type === "client")) {
+    return true;
+  }
+
+  // Default to true - server component pages may contain client component imports
+  // The hydration code will handle the case where nothing needs hydration
+  return true;
+};
+
+/**
  * Discover routes on startup
  */
 const routeTree = discoverRoutes("./src/app");
@@ -55,6 +79,9 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
       }
     }
 
+    // Check if route has any client components
+    const needsHydration = hasClientComponents(routeInfo);
+
     // Build the component tree
     // Apply layouts in reverse order (innermost first, then wrap with outer layouts)
     // So we wrap: page -> direct -> parent2 -> parent1 -> root
@@ -62,10 +89,14 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
     for (let i = layouts.length - 1; i >= 0; i--) {
       const layout = layouts[i];
       if (layout) {
-        // Pass routePath to the root layout (first layout, which is at index 0)
+        // Pass routePath and hasClientComponents to the root layout (first layout, which is at index 0)
         const props =
           i === 0
-            ? { ...layout.props, routePath: routeInfo.path }
+            ? {
+                ...layout.props,
+                routePath: routeInfo.path,
+                hasClientComponents: needsHydration,
+              }
             : layout.props || {};
         component = React.createElement(layout.component, props, component);
       }

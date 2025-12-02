@@ -1,9 +1,13 @@
 import type { BunPlugin } from "bun";
 import { discoverRoutes } from "./router";
+import type { ComponentType } from "./rsc";
 
 /**
  * Bundler plugin that generates a virtual routes module
- * Scans the app directory and generates lazy-loaded route components
+ * Scans the app directory and generates route components with RSC support
+ *
+ * Server components: Not bundled for client, rendered on server only
+ * Client components: Lazy-loaded, hydrated on client
  */
 export const routesPlugin: BunPlugin = {
   name: "virtual-routes",
@@ -22,7 +26,9 @@ export const routesPlugin: BunPlugin = {
       const imports: string[] = [];
       const routeEntries: string[] = [];
 
-      // Helper to generate a unique component name
+      /**
+       * Generate a unique component name from path
+       */
       const generateComponentName = (
         path: string,
         type: "page" | "layout"
@@ -51,30 +57,30 @@ export const routesPlugin: BunPlugin = {
         return `${name}${type === "layout" ? "Layout" : "Page"}`;
       };
 
-      // Collect all unique layouts
-      const layoutMap = new Map<string, string>();
+      // Track unique layouts and their types
+      const layoutMap = new Map<
+        string,
+        { name: string; type: ComponentType }
+      >();
 
-      // Helper to convert import path - make it relative to project root
-      // The entrypoint is src/hydrate.tsx, so imports need to be relative to that
-      // Paths from discoverRoutes are like ./app/page.tsx (relative to src/)
-      // But we need ./src/app/page.tsx (relative to project root) for the bundler
+      /**
+       * Convert import path to be relative to project root
+       */
       const toImportPath = (filePath: string): string => {
-        // If path already starts with ./src/, use it as-is
         if (filePath.startsWith("./src/")) {
           return filePath;
         }
-        // If path starts with ./app/, convert to ./src/app/
         if (filePath.startsWith("./app/")) {
           return filePath.replace("./app/", "./src/app/");
         }
-        // Otherwise, prepend ./src/
         return filePath.startsWith("./")
           ? `./src/${filePath.slice(2)}`
           : `./src/${filePath}`;
       };
 
-      // Helper to check if a layout path is the root layout (app/layout.tsx)
-      // Root layout wraps RootShell which renders <html> - skip during hydration
+      /**
+       * Check if layout is the root layout (renders <html>)
+       */
       const isRootLayout = (layoutPath: string): boolean => {
         return (
           layoutPath === "./app/layout.tsx" ||
@@ -84,75 +90,129 @@ export const routesPlugin: BunPlugin = {
         );
       };
 
+      // First pass: collect all layouts and determine types
       for (const [, routeInfo] of routes.entries()) {
-        // Generate page component import
+        // Get layout types array (parallel to parentLayouts + layoutPath)
+        const layoutTypes = routeInfo.layoutTypes || [];
+        let typeIndex = 0;
+
+        // Parent layouts
+        for (const parentLayoutPath of routeInfo.parentLayouts) {
+          if (
+            !layoutMap.has(parentLayoutPath) &&
+            !isRootLayout(parentLayoutPath)
+          ) {
+            const layoutType = layoutTypes[typeIndex] || "server";
+            layoutMap.set(parentLayoutPath, {
+              name: generateComponentName(parentLayoutPath, "layout"),
+              type: layoutType,
+            });
+          }
+          typeIndex++;
+        }
+
+        // Direct layout
+        if (routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)) {
+          if (!layoutMap.has(routeInfo.layoutPath)) {
+            const layoutType = layoutTypes[typeIndex] || "server";
+            layoutMap.set(routeInfo.layoutPath, {
+              name: generateComponentName(routeInfo.layoutPath, "layout"),
+              type: layoutType,
+            });
+          }
+        }
+      }
+
+      // Second pass: generate imports
+      // Note: We bundle ALL pages (server and client) because server component pages
+      // may contain client component imports that need to be available for hydration.
+      // The componentType flag tells the client which components need full hydration.
+      for (const [, routeInfo] of routes.entries()) {
         const pageComponentName = generateComponentName(
           routeInfo.filePath,
           "page"
         );
         const importPath = toImportPath(routeInfo.filePath);
+
+        // Always import pages - even server component pages may contain client boundaries
         imports.push(
           `const ${pageComponentName} = lazy(() => import("${importPath}"));`
         );
+      }
 
-        // Collect layouts (skip root layout - it renders <html> which is already in DOM)
-        if (
-          routeInfo.layoutPath &&
-          !layoutMap.has(routeInfo.layoutPath) &&
-          !isRootLayout(routeInfo.layoutPath)
-        ) {
-          const layoutComponentName = generateComponentName(
-            routeInfo.layoutPath,
-            "layout"
-          );
-          layoutMap.set(routeInfo.layoutPath, layoutComponentName);
-          const layoutImportPath = toImportPath(routeInfo.layoutPath);
+      // Generate layout imports (only for client layouts)
+      // Server layouts don't need client-side code
+      for (const [layoutPath, layoutInfo] of layoutMap.entries()) {
+        if (layoutInfo.type === "client") {
+          const layoutImportPath = toImportPath(layoutPath);
           imports.push(
-            `const ${layoutComponentName} = lazy(() => import("${layoutImportPath}"));`
+            `const ${layoutInfo.name} = lazy(() => import("${layoutImportPath}"));`
           );
-        }
-
-        for (const parentLayoutPath of routeInfo.parentLayouts) {
-          // Skip root layout - it renders <html> which is already in the DOM
-          if (
-            !layoutMap.has(parentLayoutPath) &&
-            !isRootLayout(parentLayoutPath)
-          ) {
-            const layoutComponentName = generateComponentName(
-              parentLayoutPath,
-              "layout"
-            );
-            layoutMap.set(parentLayoutPath, layoutComponentName);
-            const parentLayoutImportPath = toImportPath(parentLayoutPath);
-            imports.push(
-              `const ${layoutComponentName} = lazy(() => import("${parentLayoutImportPath}"));`
-            );
-          }
         }
       }
 
-      // Generate route entries
+      // Third pass: generate route entries
       for (const [routePath, routeInfo] of routes.entries()) {
         const pageComponentName = generateComponentName(
           routeInfo.filePath,
           "page"
         );
 
-        // Skip root layout - it renders <html> which is already in the DOM
-        const layoutComponentName =
+        // Get layout info
+        const layoutInfo =
           routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)
             ? layoutMap.get(routeInfo.layoutPath)
             : undefined;
 
-        // Filter out root layout from parent layouts
-        const parentLayoutNames = routeInfo.parentLayouts
+        // Get parent layout info (filter out root layout)
+        const parentLayoutInfo = routeInfo.parentLayouts
           .filter((path) => !isRootLayout(path))
-          .map((path) => layoutMap.get(path));
+          .map((path) => layoutMap.get(path))
+          .filter(Boolean);
 
-        const routeConfig: string[] = [`component: ${pageComponentName}`];
+        const routeConfig: string[] = [];
 
-        if (layoutComponentName) {
-          routeConfig.push(`layout: ${layoutComponentName}`);
+        // Always include the component reference (server or client)
+        // Server component pages may contain client component imports
+        routeConfig.push(`component: ${pageComponentName}`);
+
+        // Add component type so hydration knows how to handle it
+        routeConfig.push(
+          `componentType: "${
+            routeInfo.isClientComponent ? "client" : "server"
+          }"`
+        );
+
+        // Layout reference (only for client layouts)
+        if (layoutInfo) {
+          if (layoutInfo.type === "client") {
+            routeConfig.push(`layout: ${layoutInfo.name}`);
+          } else {
+            routeConfig.push(`layout: null`);
+          }
+          routeConfig.push(`layoutType: "${layoutInfo.type}"`);
+        }
+
+        // Parent layouts (only client ones)
+        if (parentLayoutInfo.length > 0) {
+          const clientParentLayouts = parentLayoutInfo
+            .filter((info) => info!.type === "client")
+            .map((info) => info!.name);
+
+          const parentLayoutTypes = parentLayoutInfo.map(
+            (info) => `"${info!.type}"`
+          );
+
+          if (clientParentLayouts.length > 0) {
+            routeConfig.push(
+              `parentLayouts: [${clientParentLayouts.join(", ")}]`
+            );
+          } else {
+            routeConfig.push(`parentLayouts: []`);
+          }
+          routeConfig.push(
+            `parentLayoutTypes: [${parentLayoutTypes.join(", ")}]`
+          );
         }
 
         if (routeInfo.isDynamic) {
@@ -165,10 +225,6 @@ export const routesPlugin: BunPlugin = {
           );
         }
 
-        if (parentLayoutNames.length > 0) {
-          routeConfig.push(`parentLayouts: [${parentLayoutNames.join(", ")}]`);
-        }
-
         routeEntries.push(`  "${routePath}": { ${routeConfig.join(", ")} }`);
       }
 
@@ -176,10 +232,21 @@ export const routesPlugin: BunPlugin = {
 
 ${imports.join("\n")}
 
+export type ComponentType = "server" | "client";
+
 export interface RouteConfig {
+  /** Lazy component - always defined, even for server components (they may contain client boundaries) */
   component: React.LazyExoticComponent<React.ComponentType<any>>;
-  layout?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>>;
+  /** Whether this is a server or client component */
+  componentType: ComponentType;
+  /** Lazy layout for client layouts, null for server layouts */
+  layout?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>> | null;
+  /** Layout component type */
+  layoutType?: ComponentType;
+  /** Client parent layouts (lazy loaded) */
   parentLayouts?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>>[];
+  /** Types of parent layouts */
+  parentLayoutTypes?: ComponentType[];
   isDynamic?: boolean;
   dynamicSegments?: string[];
 }

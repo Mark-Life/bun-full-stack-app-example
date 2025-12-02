@@ -8,16 +8,28 @@ export interface Metadata {
   viewport?: string;
 }
 
+/**
+ * Route data passed to the client for hydration
+ */
+export interface RouteData {
+  routePath: string;
+  /** Whether the page tree has any client components that need hydration */
+  hasClientComponents: boolean;
+}
+
 interface RootShellProps {
   children: React.ReactNode;
   metadata?: Metadata;
   routePath?: string;
+  /** Whether this route has client components needing hydration */
+  hasClientComponents?: boolean;
 }
 
 export const RootShell = ({
   children,
   metadata,
   routePath,
+  hasClientComponents = true,
 }: RootShellProps) => {
   const title = metadata?.title || "Bun + React";
   const description =
@@ -25,6 +37,11 @@ export const RootShell = ({
     "A full-stack application built with Bun and React";
   const viewport =
     metadata?.viewport || "width=device-width, initial-scale=1.0";
+
+  const routeData: RouteData = {
+    routePath: routePath || "/",
+    hasClientComponents,
+  };
 
   return (
     <html lang="en">
@@ -42,10 +59,13 @@ export const RootShell = ({
           id="__ROUTE_DATA__"
           type="application/json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({ routePath: routePath || "/" }),
+            __html: JSON.stringify(routeData),
           }}
         />
-        <script type="module" src="/hydrate.js" async />
+        {/* Only include hydration script if there are client components */}
+        {hasClientComponents && (
+          <script type="module" src="/hydrate.js" async />
+        )}
       </body>
     </html>
   );

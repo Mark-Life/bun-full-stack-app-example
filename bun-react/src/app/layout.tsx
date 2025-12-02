@@ -9,11 +9,21 @@ export const metadata: Metadata = {
 interface LayoutProps {
   children: React.ReactNode;
   routePath?: string;
+  /** Whether the route has client components needing hydration */
+  hasClientComponents?: boolean;
 }
 
-export default function RootLayout({ children, routePath }: LayoutProps) {
-  const shellProps = routePath
-    ? { metadata, routePath, children }
-    : { metadata, children };
+export default function RootLayout({
+  children,
+  routePath,
+  hasClientComponents = true,
+}: LayoutProps) {
+  const shellProps = {
+    metadata,
+    hasClientComponents,
+    children,
+    ...(routePath !== undefined && { routePath }),
+  };
+
   return <RootShell {...shellProps} />;
 }

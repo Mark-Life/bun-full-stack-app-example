@@ -26,9 +26,15 @@ bun start    # production
 
 - [ ] **Client-side Navigation** - Currently full page reload, not SPA-style `pushState`
 
+### Implemented (RSC Support)
+
+- [x] **React Server Components (RSC)** - Server-first model with client boundaries
+  - Default: Server components (no directive)
+  - `"use client"` directive marks client component boundaries
+  - Server components can contain client components
+
 ### Not Yet Implemented
 
-- [ ] **React Server Components (RSC)** - Bun supports experimentally (`--server-components`), not integrated
 - [ ] **Suspense Streaming** - Progressive render with loading fallbacks
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Server Functions / Data Loaders** - `getServerSideProps`-style data fetching
@@ -37,11 +43,21 @@ bun start    # production
 
 ## Architecture
 
-**Default model**: Server-first SSR. All components render on server, HTML streams to client, then full hydration.
+**Default model**: React Server Components (RSC).
+
+- Server components (default): Render on server only
+- Client components (`"use client"`): Render on server (SSR) + hydrate on client
 
 ```
-Request → Server matches route → Renders with layouts → Streams HTML → Client hydrates
+Request → Match route → Render (server + client components)
+       → Stream HTML → Hydrate client components only
 ```
+
+### RSC Flow
+
+1. **No directive** = Server component (render once on server)
+2. **`"use client"`** = Client component boundary (hydrates for interactivity)
+3. Server components can import client components (client boundaries)
 
 ---
 

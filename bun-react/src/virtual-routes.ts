@@ -1,12 +1,34 @@
-import type { ComponentType, ReactNode, LazyExoticComponent } from "react";
+import type {
+  ComponentType as ReactComponentType,
+  ReactNode,
+  LazyExoticComponent,
+} from "react";
 
 /**
- * Route configuration interface
+ * Component type for RSC support
+ */
+export type ComponentType = "server" | "client";
+
+/**
+ * Route configuration interface with RSC support
  */
 export interface RouteConfig {
-  component: LazyExoticComponent<ComponentType<any>>;
-  layout?: LazyExoticComponent<ComponentType<{ children: ReactNode }>>;
-  parentLayouts?: LazyExoticComponent<ComponentType<{ children: ReactNode }>>[];
+  /** Lazy component - always defined, even for server components (they may contain client boundaries) */
+  component: LazyExoticComponent<ReactComponentType<any>>;
+  /** Whether this is a server or client component */
+  componentType: ComponentType;
+  /** Lazy layout for client layouts, null for server layouts */
+  layout?: LazyExoticComponent<
+    ReactComponentType<{ children: ReactNode }>
+  > | null;
+  /** Layout component type */
+  layoutType?: ComponentType;
+  /** Client parent layouts (lazy loaded) */
+  parentLayouts?: LazyExoticComponent<
+    ReactComponentType<{ children: ReactNode }>
+  >[];
+  /** Types of parent layouts */
+  parentLayoutTypes?: ComponentType[];
   isDynamic?: boolean;
   dynamicSegments?: string[];
 }
