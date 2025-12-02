@@ -5,7 +5,7 @@ import path from "node:path";
 import { discoverPublicAssets } from "./src/framework/server/public";
 import { renderRouteToString } from "./src/framework/server/render";
 import { getPageConfig, hasPageConfig } from "./src/framework/shared/page";
-import { discoverRoutes } from "./src/framework/shared/router";
+import { discoverRoutes, type RouteInfo } from "./src/framework/shared/router";
 import { routesPlugin } from "./src/framework/shared/routes-plugin";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -40,71 +40,158 @@ Example:
 const toCamelCase = (str: string): string =>
   str.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
 
+// Regex patterns defined at top level for performance
+const INTEGER_REGEX = /^\d+$/;
+const FLOAT_REGEX = /^\d*\.\d+$/;
+
 const parseValue = (value: string): string | number | boolean | string[] => {
-  if (value === "true") return true;
-  if (value === "false") return false;
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
 
-  if (/^\d+$/.test(value)) return Number.parseInt(value, 10);
-  if (/^\d*\.\d+$/.test(value)) return Number.parseFloat(value);
+  if (INTEGER_REGEX.test(value)) {
+    return Number.parseInt(value, 10);
+  }
+  if (FLOAT_REGEX.test(value)) {
+    return Number.parseFloat(value);
+  }
 
-  if (value.includes(",")) return value.split(",").map((v) => v.trim());
+  if (value.includes(",")) {
+    return value.split(",").map((v) => v.trim());
+  }
 
   return value;
 };
 
-function parseArgs(): Partial<Bun.BuildConfig> {
+/**
+ * Handle --no- prefix argument
+ */
+const handleNoPrefix = (
+  arg: string,
+  config: Record<string, unknown>
+): boolean => {
+  if (arg.startsWith("--no-")) {
+    const key = toCamelCase(arg.slice(5));
+    config[key] = false;
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Handle boolean flag argument (no value)
+ */
+const handleBooleanFlag = (
+  arg: string,
+  args: string[],
+  index: number,
+  config: Record<string, unknown>
+): boolean => {
+  if (
+    !arg.includes("=") &&
+    (index === args.length - 1 || args[index + 1]?.startsWith("--"))
+  ) {
+    const key = toCamelCase(arg.slice(2));
+    config[key] = true;
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Extract key and value from argument
+ */
+const extractKeyValue = (
+  arg: string,
+  args: string[],
+  index: number
+): { key: string; value: string; nextIndex: number } => {
+  if (arg.includes("=")) {
+    const parts = arg.slice(2).split("=", 2);
+    return {
+      key: parts[0] ?? "",
+      value: parts[1] ?? "",
+      nextIndex: index,
+    };
+  }
+  const nextIndex = index + 1;
+  const nextArg = args[nextIndex];
+  return {
+    key: arg.slice(2),
+    value: nextArg ?? "",
+    nextIndex,
+  };
+};
+
+/**
+ * Set nested config value (for dot notation like minify.whitespace)
+ */
+const setNestedConfig = (
+  key: string,
+  value: string | number | boolean | string[],
+  config: Record<string, unknown>
+): void => {
+  const [parentKey, childKey] = key.split(".");
+  if (parentKey && childKey) {
+    const parent = (config[parentKey] as Record<string, unknown>) || {};
+    parent[childKey] = parseValue(value as string);
+    config[parentKey] = parent;
+  }
+};
+
+/**
+ * Parse a single argument and update config
+ */
+const parseSingleArg = (
+  arg: string,
+  args: string[],
+  index: number,
+  config: Record<string, unknown>
+): number => {
+  if (arg === undefined || !arg.startsWith("--")) {
+    return index;
+  }
+
+  if (handleNoPrefix(arg, config)) {
+    return index;
+  }
+
+  if (handleBooleanFlag(arg, args, index, config)) {
+    return index;
+  }
+
+  const { key, value, nextIndex } = extractKeyValue(arg, args, index);
+  const camelKey = toCamelCase(key);
+
+  if (camelKey.includes(".")) {
+    setNestedConfig(camelKey, value, config);
+  } else {
+    config[camelKey] = parseValue(value);
+  }
+
+  return nextIndex;
+};
+
+const parseArgs = (): Partial<Bun.BuildConfig> => {
   const config: Record<string, unknown> = {};
   const args = process.argv.slice(2);
 
-  for (let i = 0; i < args.length; i++) {
+  for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === undefined) continue;
-    if (!arg.startsWith("--")) continue;
-
-    if (arg.startsWith("--no-")) {
-      const key = toCamelCase(arg.slice(5));
-      config[key] = false;
+    if (arg === undefined) {
       continue;
     }
-
-    if (
-      !arg.includes("=") &&
-      (i === args.length - 1 || args[i + 1]?.startsWith("--"))
-    ) {
-      const key = toCamelCase(arg.slice(2));
-      config[key] = true;
+    if (!arg.startsWith("--")) {
       continue;
     }
-
-    let key: string;
-    let value: string;
-
-    if (arg.includes("=")) {
-      const parts = arg.slice(2).split("=", 2);
-      key = parts[0] ?? "";
-      value = parts[1] ?? "";
-    } else {
-      key = arg.slice(2);
-      const nextArg = args[++i];
-      value = nextArg ?? "";
-    }
-
-    key = toCamelCase(key);
-
-    if (key.includes(".")) {
-      const [parentKey, childKey] = key.split(".");
-      if (parentKey && childKey) {
-        const parent = (config[parentKey] as Record<string, unknown>) || {};
-        parent[childKey] = parseValue(value);
-        config[parentKey] = parent;
-      }
-    } else {
-      config[key] = parseValue(value);
-    }
+    i = parseSingleArg(arg, args, i, config);
   }
 
   return config as Partial<Bun.BuildConfig>;
-}
+};
 
 const formatFileSize = (bytes: number): string => {
   const units = ["B", "KB", "MB", "GB"];
@@ -113,7 +200,7 @@ const formatFileSize = (bytes: number): string => {
 
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
-    unitIndex++;
+    unitIndex += 1;
   }
 
   return `${size.toFixed(2)} ${units[unitIndex]}`;
@@ -303,6 +390,120 @@ const buildConcretePath = (
 };
 
 /**
+ * Get parameter sets for a route (handles dynamic routes with generateParams)
+ */
+const getParamSets = async (
+  routePath: string,
+  routeInfo: RouteInfo,
+  PageComponent: unknown
+): Promise<Record<string, string>[] | null> => {
+  if (!(routeInfo.isDynamic && routeInfo.hasStaticParams)) {
+    return [{}];
+  }
+
+  if (!hasPageConfig(PageComponent)) {
+    console.warn(
+      `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
+    );
+    return null;
+  }
+
+  const config = getPageConfig(PageComponent);
+  if (!config.generateParams) {
+    console.warn(
+      `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
+    );
+    return null;
+  }
+
+  const generatedParams = await config.generateParams();
+  return generatedParams;
+};
+
+/**
+ * Load page data if loader exists
+ */
+const loadPageData = async (
+  routeInfo: RouteInfo,
+  PageComponent: unknown
+): Promise<unknown> => {
+  if (!(routeInfo.hasLoader && hasPageConfig(PageComponent))) {
+    return;
+  }
+
+  const config = getPageConfig(PageComponent);
+  if (!config.loader) {
+    return;
+  }
+
+  return await config.loader();
+};
+
+/**
+ * Render a single page with given params
+ */
+const renderSinglePage = async (
+  routePath: string,
+  routeInfo: RouteInfo,
+  params: Record<string, string>,
+  PageComponent: unknown
+): Promise<void> => {
+  const concretePath =
+    routeInfo.isDynamic && Object.keys(params).length > 0
+      ? buildConcretePath(routePath, params)
+      : routePath;
+
+  const pageData = await loadPageData(routeInfo, PageComponent);
+  const html = await renderRouteToString(routeInfo, params, pageData);
+
+  const htmlPath =
+    concretePath === "/"
+      ? path.join(outdir, "pages", "index.html")
+      : path.join(outdir, "pages", concretePath.slice(1), "index.html");
+
+  await mkdir(path.dirname(htmlPath), { recursive: true });
+  await Bun.write(htmlPath, html);
+
+  outputs.push({
+    File: path.relative(process.cwd(), htmlPath),
+    Type: "static page",
+    Size: formatFileSize(html.length),
+  });
+};
+
+/**
+ * Process a single static route for pre-rendering
+ */
+const processStaticRoute = async (
+  routePath: string,
+  routeInfo: RouteInfo
+): Promise<number> => {
+  const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+  const pageModule = await import(resolvedPagePath);
+  const PageComponent = pageModule.default;
+
+  if (!PageComponent) {
+    console.warn(
+      `⚠️  No default export found in ${routeInfo.filePath}, skipping`
+    );
+    return 0;
+  }
+
+  const paramSets = await getParamSets(routePath, routeInfo, PageComponent);
+  if (paramSets === null) {
+    return 0;
+  }
+
+  let count = 0;
+  for (const params of paramSets) {
+    await renderSinglePage(routePath, routeInfo, params, PageComponent);
+    count += 1;
+  }
+
+  return count;
+};
+
+/**
  * Pre-render static pages at build time
  */
 const preRenderStaticPages = async () => {
@@ -312,88 +513,13 @@ const preRenderStaticPages = async () => {
   let staticCount = 0;
 
   for (const [routePath, routeInfo] of routes.entries()) {
-    // Only pre-render static pages
     if (routeInfo.pageType !== "static") {
       continue;
     }
 
     try {
-      // Import the page component to access config
-      const resolvedPagePath = resolveImportPath(routeInfo.filePath);
-      const pageModule = await import(resolvedPagePath);
-      const PageComponent = pageModule.default;
-
-      if (!PageComponent) {
-        console.warn(
-          `⚠️  No default export found in ${routeInfo.filePath}, skipping`
-        );
-        continue;
-      }
-
-      // Check if page has generateParams (for dynamic routes)
-      let paramSets: Record<string, string>[] = [{}];
-      if (routeInfo.isDynamic && routeInfo.hasStaticParams) {
-        if (hasPageConfig(PageComponent)) {
-          const config = getPageConfig(PageComponent);
-          if (config.generateParams) {
-            const generatedParams = await config.generateParams();
-            paramSets = generatedParams;
-          } else {
-            console.warn(
-              `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
-            );
-            continue;
-          }
-        } else {
-          console.warn(
-            `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
-          );
-          continue;
-        }
-      }
-
-      // Render each param combination
-      for (const params of paramSets) {
-        // Build concrete path for this param set
-        const concretePath =
-          routeInfo.isDynamic && Object.keys(params).length > 0
-            ? buildConcretePath(routePath, params)
-            : routePath;
-
-        // Load data if loader exists
-        let pageData: unknown;
-        if (routeInfo.hasLoader && hasPageConfig(PageComponent)) {
-          const config = getPageConfig(PageComponent);
-          if (config.loader) {
-            pageData = await config.loader();
-          }
-        }
-
-        // Render to HTML string
-        const html = await renderRouteToString(routeInfo, params, pageData);
-
-        // Determine output path
-        // / -> dist/pages/index.html
-        // /about -> dist/pages/about/index.html
-        // /blog/post-1 -> dist/pages/blog/post-1/index.html
-        const htmlPath =
-          concretePath === "/"
-            ? path.join(outdir, "pages", "index.html")
-            : path.join(outdir, "pages", concretePath.slice(1), "index.html");
-
-        // Ensure directory exists
-        await mkdir(path.dirname(htmlPath), { recursive: true });
-
-        // Write HTML file
-        await Bun.write(htmlPath, html);
-        staticCount++;
-
-        outputs.push({
-          File: path.relative(process.cwd(), htmlPath),
-          Type: "static page",
-          Size: formatFileSize(html.length),
-        });
-      }
+      const count = await processStaticRoute(routePath, routeInfo);
+      staticCount += count;
     } catch (error) {
       console.error(
         `❌ Failed to pre-render ${routePath}:`,

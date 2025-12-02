@@ -22,6 +22,14 @@ const ROUTE_FILES = ["page.tsx", "index.tsx"];
  */
 const LAYOUT_FILE = "layout.tsx";
 
+/**
+ * Regex patterns for dynamic route segments
+ */
+const CATCH_ALL_PATTERN = /^\[\.\.\.(\w+)\]$/;
+const DYNAMIC_PATTERN = /^\[(\w+)\]$/;
+const FILE_EXTENSION_PATTERN = /\.(tsx|ts|jsx|js)$/;
+const TRAILING_SLASH_PATTERN = /\/$/;
+
 export interface RouteInfo {
   path: string;
   filePath: string;
@@ -66,11 +74,11 @@ const isLayoutFile = (filename: string): boolean => filename === LAYOUT_FILE;
 const extractDynamicSegment = (
   segment: string
 ): { name: string; isCatchAll: boolean } | null => {
-  const catchAllMatch = segment.match(/^\[\.\.\.(\w+)\]$/);
+  const catchAllMatch = segment.match(CATCH_ALL_PATTERN);
   if (catchAllMatch?.[1]) {
     return { name: catchAllMatch[1], isCatchAll: true };
   }
-  const dynamicMatch = segment.match(/^\[(\w+)\]$/);
+  const dynamicMatch = segment.match(DYNAMIC_PATTERN);
   if (dynamicMatch?.[1]) {
     return { name: dynamicMatch[1], isCatchAll: false };
   }
@@ -97,7 +105,7 @@ const filePathToRoute = (
   const filename = relativePath.split("/").pop() || "";
 
   // Remove file extension
-  const routeSegment = filename.replace(/\.(tsx|ts|jsx|js)$/, "");
+  const routeSegment = filename.replace(FILE_EXTENSION_PATTERN, "");
 
   // Build route path from directory segments
   const dirSegments = dir === "." ? [] : dir.split("/").filter(Boolean);
@@ -211,13 +219,77 @@ const findLayouts = (
     }
   }
 
-  const layoutPath = allLayouts[allLayouts.length - 1]?.path;
+  const layoutPath = allLayouts.at(-1)?.path;
   const parentLayouts = allLayouts.slice(0, -1).map((l) => l.path);
 
   if (layoutPath) {
     return { layoutPath, parentLayouts, layoutTypes };
   }
   return { parentLayouts, layoutTypes };
+};
+
+/**
+ * Process a route file and add it to the routes map
+ */
+const processRouteFile = (
+  fullPath: string,
+  appDir: string,
+  routes: Map<string, RouteInfo>
+): void => {
+  const {
+    path: routePath,
+    dynamicSegments,
+    isDynamic,
+  } = filePathToRoute(fullPath, appDir);
+  const { layoutPath, parentLayouts, layoutTypes } = findLayouts(
+    fullPath,
+    appDir
+  );
+
+  // Check if the page itself is a client component
+  const isClientComponent = hasUseClientDirective(fullPath);
+
+  // Check if the page imports any client components (has client boundaries)
+  const hasClientBoundaries = hasClientBoundariesSync(fullPath);
+
+  // Detect page configuration
+  const pageType = extractPageType(fullPath);
+  const hasStaticParams = hasGenerateParams(fullPath);
+  const hasLoaderFn = hasLoader(fullPath);
+
+  const routeInfo: RouteInfo = {
+    path: routePath,
+    filePath: fullPath,
+    parentLayouts,
+    isDynamic,
+    isClientComponent,
+    layoutTypes,
+    hasClientBoundaries,
+    pageType,
+    hasStaticParams,
+    hasLoader: hasLoaderFn,
+    ...(dynamicSegments.length > 0 && { dynamicSegments }),
+  };
+  if (layoutPath) {
+    routeInfo.layoutPath = layoutPath;
+  }
+  routes.set(routePath, routeInfo);
+};
+
+/**
+ * Process a layout file and add it to the layouts map
+ */
+const processLayoutFile = (
+  fullPath: string,
+  appDir: string,
+  layouts: Map<string, string>
+): void => {
+  const layoutDir = dirname(fullPath);
+  const { path: layoutRoute } = filePathToRoute(
+    join(layoutDir, "page.tsx"),
+    appDir
+  );
+  layouts.set(layoutRoute, fullPath);
 };
 
 /**
@@ -244,51 +316,9 @@ const scanDirectory = (
       scanDirectory(fullPath, appDir, routes, layouts);
     } else if (stat.isFile()) {
       if (isRouteFile(entry)) {
-        const {
-          path: routePath,
-          dynamicSegments,
-          isDynamic,
-        } = filePathToRoute(fullPath, appDir);
-        const { layoutPath, parentLayouts, layoutTypes } = findLayouts(
-          fullPath,
-          appDir
-        );
-
-        // Check if the page itself is a client component
-        const isClientComponent = hasUseClientDirective(fullPath);
-
-        // Check if the page imports any client components (has client boundaries)
-        const hasClientBoundaries = hasClientBoundariesSync(fullPath);
-
-        // Detect page configuration
-        const pageType = extractPageType(fullPath);
-        const hasStaticParams = hasGenerateParams(fullPath);
-        const hasLoaderFn = hasLoader(fullPath);
-
-        const routeInfo: RouteInfo = {
-          path: routePath,
-          filePath: fullPath,
-          parentLayouts,
-          isDynamic,
-          isClientComponent,
-          layoutTypes,
-          hasClientBoundaries,
-          pageType,
-          hasStaticParams,
-          hasLoader: hasLoaderFn,
-          ...(dynamicSegments.length > 0 && { dynamicSegments }),
-        };
-        if (layoutPath) {
-          routeInfo.layoutPath = layoutPath;
-        }
-        routes.set(routePath, routeInfo);
+        processRouteFile(fullPath, appDir, routes);
       } else if (isLayoutFile(entry)) {
-        const layoutDir = dirname(fullPath);
-        const { path: layoutRoute } = filePathToRoute(
-          join(layoutDir, "page.tsx"),
-          appDir
-        );
-        layouts.set(layoutRoute, fullPath);
+        processLayoutFile(fullPath, appDir, layouts);
       }
     }
   }
@@ -356,49 +386,60 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
 };
 
 /**
- * Match a route pattern against a URL path and extract params
+ * Match catch-all route pattern
  */
-const matchPattern = (
-  pattern: string,
-  urlPath: string
+const matchCatchAll = (
+  patternParts: string[],
+  urlParts: string[]
 ): { matched: boolean; params: Record<string, string> } => {
-  const patternParts = pattern.split("/").filter(Boolean);
-  const urlParts = urlPath.split("/").filter(Boolean);
-
   const params: Record<string, string> = {};
-
-  // Handle catch-all routes
-  const lastPatternPart = patternParts[patternParts.length - 1];
-  if (patternParts.length > 0 && lastPatternPart?.startsWith("*")) {
-    const catchAllParam = lastPatternPart.slice(1);
-    if (urlParts.length >= patternParts.length - 1) {
-      const matchedParts = patternParts.slice(0, -1);
-      for (let i = 0; i < matchedParts.length; i++) {
-        const patternPart = matchedParts[i];
-        if (!patternPart) continue;
-        const urlPart = urlParts[i];
-
-        if (patternPart.startsWith(":")) {
-          params[patternPart.slice(1)] = urlPart || "";
-        } else if (patternPart !== urlPart) {
-          return { matched: false, params: {} };
-        }
-      }
-      // Catch-all captures the rest
-      params[catchAllParam] = urlParts.slice(matchedParts.length).join("/");
-      return { matched: true, params };
-    }
+  const lastPatternPart = patternParts.at(-1);
+  if (!lastPatternPart?.startsWith("*")) {
     return { matched: false, params: {} };
   }
 
-  // Regular dynamic route matching
+  const catchAllParam = lastPatternPart.slice(1);
+  if (urlParts.length < patternParts.length - 1) {
+    return { matched: false, params: {} };
+  }
+
+  const matchedParts = patternParts.slice(0, -1);
+  for (let i = 0; i < matchedParts.length; i++) {
+    const patternPart = matchedParts[i];
+    if (!patternPart) {
+      continue;
+    }
+    const urlPart = urlParts[i];
+
+    if (patternPart.startsWith(":")) {
+      params[patternPart.slice(1)] = urlPart || "";
+    } else if (patternPart !== urlPart) {
+      return { matched: false, params: {} };
+    }
+  }
+  // Catch-all captures the rest
+  params[catchAllParam] = urlParts.slice(matchedParts.length).join("/");
+  return { matched: true, params };
+};
+
+/**
+ * Match regular dynamic route pattern
+ */
+const matchRegular = (
+  patternParts: string[],
+  urlParts: string[]
+): { matched: boolean; params: Record<string, string> } => {
+  const params: Record<string, string> = {};
+
   if (patternParts.length !== urlParts.length) {
     return { matched: false, params: {} };
   }
 
   for (let i = 0; i < patternParts.length; i++) {
     const patternPart = patternParts[i];
-    if (!patternPart) continue;
+    if (!patternPart) {
+      continue;
+    }
     const urlPart = urlParts[i];
 
     if (patternPart.startsWith(":")) {
@@ -412,6 +453,28 @@ const matchPattern = (
 };
 
 /**
+ * Match a route pattern against a URL path and extract params
+ */
+const matchPattern = (
+  pattern: string,
+  urlPath: string
+): { matched: boolean; params: Record<string, string> } => {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const urlParts = urlPath.split("/").filter(Boolean);
+
+  // Handle catch-all routes
+  if (patternParts.length > 0) {
+    const catchAllResult = matchCatchAll(patternParts, urlParts);
+    if (catchAllResult.matched) {
+      return catchAllResult;
+    }
+  }
+
+  // Regular dynamic route matching
+  return matchRegular(patternParts, urlParts);
+};
+
+/**
  * Match a URL path to a route and extract params
  */
 export const matchRoute = (
@@ -420,7 +483,7 @@ export const matchRoute = (
 ): { route: RouteInfo; params: Record<string, string> } | null => {
   // Normalize URL path
   const normalizedPath =
-    urlPath === "/" ? "/" : urlPath.replace(/\/$/, "") || "/";
+    urlPath === "/" ? "/" : urlPath.replace(TRAILING_SLASH_PATTERN, "") || "/";
 
   // Exact match first
   const exactRoute = routes.get(normalizedPath);

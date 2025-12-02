@@ -4,12 +4,23 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ComponentType as ReactComponentType } from "react";
 
 /**
  * Branded marker for client components
  */
 const CLIENT_MARKER = Symbol.for("__isClient");
+
+/**
+ * Regex patterns for detecting client component usage
+ */
+const CLIENT_COMPONENT_REGEX = /clientComponent\s*\(/g;
+const IMPORT_CLIENT_COMPONENT_REGEX =
+  /import\s+.*\bclientComponent\b.*from\s+["'][^"']+["']/;
+const EXPORT_CLIENT_COMPONENT_REGEX =
+  /export\s+(?:default\s+)?(?:const|function|class)\s+\w+\s*=\s*clientComponent/;
+const IMPORT_FROM_REGEX = /import\s+.*\s+from\s+["']([^"']+)["']/g;
 
 /**
  * Type-safe client component marker
@@ -55,23 +66,17 @@ export const hasUseClientDirective = (filePath: string): boolean => {
 const hasClientComponentUsage = (content: string): boolean => {
   // Check for clientComponent( usage
   // Matches: clientComponent(, clientComponent (with optional whitespace)
-  const clientComponentRegex = /clientComponent\s*\(/g;
-
-  if (clientComponentRegex.test(content)) {
+  if (CLIENT_COMPONENT_REGEX.test(content)) {
     return true;
   }
 
   // Also check if file imports clientComponent (indicates it might be used)
   // This is a fallback for cases where the pattern might be more complex
-  const importRegex = /import\s+.*\bclientComponent\b.*from\s+["'][^"']+["']/;
-  if (importRegex.test(content)) {
-    // If it imports clientComponent, check if it's actually used
-    // Look for export statements that might use it
-    const exportRegex =
-      /export\s+(?:default\s+)?(?:const|function|class)\s+\w+\s*=\s*clientComponent/;
-    if (exportRegex.test(content)) {
-      return true;
-    }
+  if (
+    IMPORT_CLIENT_COMPONENT_REGEX.test(content) &&
+    EXPORT_CLIENT_COMPONENT_REGEX.test(content)
+  ) {
+    return true;
   }
 
   return false;
@@ -90,49 +95,90 @@ export const getComponentType = (filePath: string): ComponentType =>
   hasUseClientDirective(filePath) ? "client" : "server";
 
 /**
+ * Check if a relative import path is a client component
+ */
+const checkRelativeImport = (filePath: string, importPath: string): boolean => {
+  const resolvedPath = join(dirname(filePath), importPath);
+  const extensions = [".tsx", ".ts", ".jsx", ".js"];
+
+  for (const ext of extensions) {
+    const fullPath = resolvedPath.endsWith(ext)
+      ? resolvedPath
+      : `${resolvedPath}${ext}`;
+    if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Extract import paths from file content
+ */
+const extractImportPaths = (content: string): string[] => {
+  const importPaths: string[] = [];
+  let match: RegExpExecArray | null = null;
+
+  while (true) {
+    match = IMPORT_FROM_REGEX.exec(content);
+    if (match === null) {
+      break;
+    }
+    const importPath = match[1];
+    if (importPath) {
+      importPaths.push(importPath);
+    }
+  }
+
+  return importPaths;
+};
+
+/**
  * Scan imports in a file to find client component boundaries
  * Returns array of import paths that are client components
  */
-export const findClientBoundaries = async (
-  filePath: string
-): Promise<string[]> => {
+export const findClientBoundaries = (filePath: string): string[] => {
   if (!existsSync(filePath)) {
     return [];
   }
 
   const content = readFileSync(filePath, "utf-8");
+  const importPaths = extractImportPaths(content);
   const clientImports: string[] = [];
 
-  // Simple regex to find imports (doesn't handle all edge cases)
-  const importRegex = /import\s+.*\s+from\s+["']([^"']+)["']/g;
-  let match: RegExpExecArray | null = null;
-
-  while (true) {
-    match = importRegex.exec(content);
-    if (match === null) break;
-    const importPath = match[1];
-    if (importPath) {
-      // Resolve relative imports
-      if (importPath.startsWith(".")) {
-        const { dirname, join } = await import("path");
-        const resolvedPath = join(dirname(filePath), importPath);
-
-        // Try common extensions
-        const extensions = [".tsx", ".ts", ".jsx", ".js"];
-        for (const ext of extensions) {
-          const fullPath = resolvedPath.endsWith(ext)
-            ? resolvedPath
-            : `${resolvedPath}${ext}`;
-          if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
-            clientImports.push(importPath);
-            break;
-          }
-        }
+  for (const importPath of importPaths) {
+    if (importPath.startsWith(".")) {
+      const isClient = checkRelativeImport(filePath, importPath);
+      if (isClient) {
+        clientImports.push(importPath);
       }
     }
   }
 
   return clientImports;
+};
+
+/**
+ * Check if a relative import path is a client component (sync version)
+ */
+const checkRelativeImportSync = (
+  filePath: string,
+  importPath: string
+): boolean => {
+  const resolvedPath = join(dirname(filePath), importPath);
+  const extensions = [".tsx", ".ts", ".jsx", ".js"];
+
+  for (const ext of extensions) {
+    const fullPath = resolvedPath.endsWith(ext)
+      ? resolvedPath
+      : `${resolvedPath}${ext}`;
+    if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 /**
@@ -145,32 +191,13 @@ export const hasClientBoundariesSync = (filePath: string): boolean => {
   }
 
   const content = readFileSync(filePath, "utf-8");
+  const importPaths = extractImportPaths(content);
 
-  // Simple regex to find imports
-  const importRegex = /import\s+.*\s+from\s+["']([^"']+)["']/g;
-  let match: RegExpExecArray | null = null;
-
-  const { dirname, join } = require("path");
-
-  while (true) {
-    match = importRegex.exec(content);
-    if (match === null) break;
-    const importPath = match[1];
-    if (importPath) {
-      // Resolve relative imports
-      if (importPath.startsWith(".")) {
-        const resolvedPath = join(dirname(filePath), importPath);
-
-        // Try common extensions
-        const extensions = [".tsx", ".ts", ".jsx", ".js"];
-        for (const ext of extensions) {
-          const fullPath = resolvedPath.endsWith(ext)
-            ? resolvedPath
-            : `${resolvedPath}${ext}`;
-          if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
-            return true;
-          }
-        }
+  for (const importPath of importPaths) {
+    if (importPath.startsWith(".")) {
+      const isClient = checkRelativeImportSync(filePath, importPath);
+      if (isClient) {
+        return true;
       }
     }
   }

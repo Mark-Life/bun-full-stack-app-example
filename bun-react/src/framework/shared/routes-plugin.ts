@@ -2,242 +2,245 @@ import type { BunPlugin } from "bun";
 import { discoverRoutes } from "./router";
 import type { ComponentType } from "./rsc";
 
+// Regex patterns defined at top level for performance
+const VIRTUAL_ROUTES_FILTER = /^virtual:routes$/;
+const VIRTUAL_ROUTES_LOAD_FILTER = /.*/;
+const ALIAS_PREFIX_REGEX = /^~\//;
+const SRC_APP_PREFIX_REGEX = /^\.\/src\/app\//;
+const APP_PREFIX_REGEX = /^\.\/app\//;
+const FILE_EXTENSION_REGEX = /\.(tsx|ts|jsx|js)$/;
+const KEBAB_SNAKE_CASE_REGEX = /[-_]/;
+
 /**
- * Bundler plugin that generates a virtual routes module
- * Scans the app directory and generates route components with RSC support
- *
- * Server components: Not bundled for client, rendered on server only
- * Client components: Lazy-loaded, hydrated on client
+ * Generate a unique component name from path
  */
-export const routesPlugin: BunPlugin = {
-  name: "virtual-routes",
-  setup(build) {
-    // Intercept imports of "virtual:routes"
-    build.onResolve({ filter: /^virtual:routes$/ }, () => ({
-      path: "virtual:routes",
-      namespace: "virtual-routes",
-    }));
+const generateComponentName = (
+  path: string,
+  type: "page" | "layout"
+): string => {
+  const parts = path
+    .replace(ALIAS_PREFIX_REGEX, "") // Remove ~/ alias
+    .replace(SRC_APP_PREFIX_REGEX, "") // Remove ./src/app/ prefix
+    .replace(APP_PREFIX_REGEX, "") // Remove ./app/ prefix
+    .replace(FILE_EXTENSION_REGEX, "")
+    .split("/")
+    .filter(Boolean);
 
-    // Generate the routes module when virtual:routes is loaded
-    build.onLoad({ filter: /.*/, namespace: "virtual-routes" }, async () => {
-      const { routes } = discoverRoutes("./src/app");
-
-      // Generate import statements and route configuration
-      const imports: string[] = [];
-      const routeEntries: string[] = [];
-
-      /**
-       * Generate a unique component name from path
-       */
-      const generateComponentName = (
-        path: string,
-        type: "page" | "layout"
-      ): string => {
-        const parts = path
-          .replace(/^~\//, "") // Remove ~/ alias
-          .replace(/^\.\/src\/app\//, "") // Remove ./src/app/ prefix
-          .replace(/^\.\/app\//, "") // Remove ./app/ prefix
-          .replace(/\.(tsx|ts|jsx|js)$/, "")
-          .split("/")
-          .filter(Boolean);
-
-        const name = parts
-          .map((part) => {
-            // Convert dynamic segments to PascalCase
-            if (part.startsWith("[") && part.endsWith("]")) {
-              const param = part.slice(1, -1);
-              return param.charAt(0).toUpperCase() + param.slice(1);
-            }
-            // Convert kebab-case and snake_case to PascalCase
-            return part
-              .split(/[-_]/)
-              .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-              .join("");
-          })
-          .join("");
-
-        return `${name}${type === "layout" ? "Layout" : "Page"}`;
-      };
-
-      // Track unique layouts and their types
-      const layoutMap = new Map<
-        string,
-        { name: string; type: ComponentType }
-      >();
-
-      /**
-       * Convert import path to be relative to project root
-       * Handles ~/ alias (maps to ./src/) and other path formats
-       */
-      const toImportPath = (filePath: string): string => {
-        // Handle ~/ alias (maps to ./src/)
-        if (filePath.startsWith("~/")) {
-          return filePath.replace("~/", "./src/");
-        }
-        if (filePath.startsWith("./src/")) {
-          return filePath;
-        }
-        if (filePath.startsWith("./app/")) {
-          return filePath.replace("./app/", "./src/app/");
-        }
-        return filePath.startsWith("./")
-          ? `./src/${filePath.slice(2)}`
-          : `./src/${filePath}`;
-      };
-
-      /**
-       * Check if layout is the root layout (renders <html>)
-       */
-      const isRootLayout = (layoutPath: string): boolean =>
-        layoutPath === "./app/layout.tsx" ||
-        layoutPath === "./src/app/layout.tsx" ||
-        layoutPath === "~/app/layout.tsx" ||
-        layoutPath.endsWith("/app/layout.tsx") ||
-        layoutPath.endsWith("/src/app/layout.tsx");
-
-      // First pass: collect all layouts and determine types
-      for (const [, routeInfo] of routes.entries()) {
-        // Get layout types array (parallel to parentLayouts + layoutPath)
-        const layoutTypes = routeInfo.layoutTypes || [];
-        let typeIndex = 0;
-
-        // Parent layouts
-        for (const parentLayoutPath of routeInfo.parentLayouts) {
-          if (
-            !(layoutMap.has(parentLayoutPath) || isRootLayout(parentLayoutPath))
-          ) {
-            const layoutType = layoutTypes[typeIndex] || "server";
-            layoutMap.set(parentLayoutPath, {
-              name: generateComponentName(parentLayoutPath, "layout"),
-              type: layoutType,
-            });
-          }
-          typeIndex++;
-        }
-
-        // Direct layout
-        if (
-          routeInfo.layoutPath &&
-          !isRootLayout(routeInfo.layoutPath) &&
-          !layoutMap.has(routeInfo.layoutPath)
-        ) {
-          const layoutType = layoutTypes[typeIndex] || "server";
-          layoutMap.set(routeInfo.layoutPath, {
-            name: generateComponentName(routeInfo.layoutPath, "layout"),
-            type: layoutType,
-          });
-        }
+  const name = parts
+    .map((part) => {
+      // Convert dynamic segments to PascalCase
+      if (part.startsWith("[") && part.endsWith("]")) {
+        const param = part.slice(1, -1);
+        return param.charAt(0).toUpperCase() + param.slice(1);
       }
+      // Convert kebab-case and snake_case to PascalCase
+      return part
+        .split(KEBAB_SNAKE_CASE_REGEX)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join("");
+    })
+    .join("");
 
-      // Second pass: generate imports
-      // Note: We bundle ALL pages (server and client) because server component pages
-      // may contain client component imports that need to be available for hydration.
-      // The componentType flag tells the client which components need full hydration.
-      for (const [, routeInfo] of routes.entries()) {
-        const pageComponentName = generateComponentName(
-          routeInfo.filePath,
-          "page"
-        );
-        const importPath = toImportPath(routeInfo.filePath);
+  return `${name}${type === "layout" ? "Layout" : "Page"}`;
+};
 
-        // Always import pages - even server component pages may contain client boundaries
-        imports.push(
-          `const ${pageComponentName} = lazy(() => import("${importPath}"));`
-        );
+/**
+ * Convert import path to be relative to project root
+ * Handles ~/ alias (maps to ./src/) and other path formats
+ */
+const toImportPath = (filePath: string): string => {
+  // Handle ~/ alias (maps to ./src/)
+  if (filePath.startsWith("~/")) {
+    return filePath.replace("~/", "./src/");
+  }
+  if (filePath.startsWith("./src/")) {
+    return filePath;
+  }
+  if (filePath.startsWith("./app/")) {
+    return filePath.replace("./app/", "./src/app/");
+  }
+  return filePath.startsWith("./")
+    ? `./src/${filePath.slice(2)}`
+    : `./src/${filePath}`;
+};
+
+/**
+ * Check if layout is the root layout (renders <html>)
+ */
+const isRootLayout = (layoutPath: string): boolean =>
+  layoutPath === "./app/layout.tsx" ||
+  layoutPath === "./src/app/layout.tsx" ||
+  layoutPath === "~/app/layout.tsx" ||
+  layoutPath.endsWith("/app/layout.tsx") ||
+  layoutPath.endsWith("/src/app/layout.tsx");
+
+type LayoutInfo = { name: string; type: ComponentType };
+
+/**
+ * Collect all layouts and determine types
+ */
+const collectLayouts = (
+  routes: Map<string, import("./router").RouteInfo>
+): Map<string, LayoutInfo> => {
+  const layoutMap = new Map<string, LayoutInfo>();
+
+  for (const [, routeInfo] of routes.entries()) {
+    // Get layout types array (parallel to parentLayouts + layoutPath)
+    const layoutTypes = routeInfo.layoutTypes || [];
+    let typeIndex = 0;
+
+    // Parent layouts
+    for (const parentLayoutPath of routeInfo.parentLayouts) {
+      if (
+        !(layoutMap.has(parentLayoutPath) || isRootLayout(parentLayoutPath))
+      ) {
+        const layoutType = layoutTypes[typeIndex] || "server";
+        layoutMap.set(parentLayoutPath, {
+          name: generateComponentName(parentLayoutPath, "layout"),
+          type: layoutType,
+        });
       }
+      typeIndex += 1;
+    }
 
-      // Generate layout imports (only for client layouts)
-      // Server layouts don't need client-side code
-      for (const [layoutPath, layoutInfo] of layoutMap.entries()) {
-        if (layoutInfo.type === "client") {
-          const layoutImportPath = toImportPath(layoutPath);
-          imports.push(
-            `const ${layoutInfo.name} = lazy(() => import("${layoutImportPath}"));`
-          );
-        }
-      }
+    // Direct layout
+    if (
+      routeInfo.layoutPath &&
+      !isRootLayout(routeInfo.layoutPath) &&
+      !layoutMap.has(routeInfo.layoutPath)
+    ) {
+      const layoutType = layoutTypes[typeIndex] || "server";
+      layoutMap.set(routeInfo.layoutPath, {
+        name: generateComponentName(routeInfo.layoutPath, "layout"),
+        type: layoutType,
+      });
+    }
+  }
 
-      // Third pass: generate route entries
-      for (const [routePath, routeInfo] of routes.entries()) {
-        const pageComponentName = generateComponentName(
-          routeInfo.filePath,
-          "page"
-        );
+  return layoutMap;
+};
 
-        // Get layout info
-        const layoutInfo =
-          routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)
-            ? layoutMap.get(routeInfo.layoutPath)
-            : undefined;
+/**
+ * Generate import statements for pages and client layouts
+ */
+const generateImports = (
+  routes: Map<string, import("./router").RouteInfo>,
+  layoutMap: Map<string, LayoutInfo>
+): string[] => {
+  const imports: string[] = [];
 
-        // Get parent layout info (filter out root layout)
-        const parentLayoutInfo = routeInfo.parentLayouts
-          .filter((path) => !isRootLayout(path))
-          .map((path) => layoutMap.get(path))
-          .filter(Boolean);
+  // Import all pages
+  for (const [, routeInfo] of routes.entries()) {
+    const pageComponentName = generateComponentName(routeInfo.filePath, "page");
+    const importPath = toImportPath(routeInfo.filePath);
+    imports.push(
+      `const ${pageComponentName} = lazy(() => import("${importPath}"));`
+    );
+  }
 
-        const routeConfig: string[] = [];
+  // Import client layouts only
+  for (const [layoutPath, layoutInfo] of layoutMap.entries()) {
+    if (layoutInfo.type === "client") {
+      const layoutImportPath = toImportPath(layoutPath);
+      imports.push(
+        `const ${layoutInfo.name} = lazy(() => import("${layoutImportPath}"));`
+      );
+    }
+  }
 
-        // Always include the component reference (server or client)
-        // Server component pages may contain client component imports
-        routeConfig.push(`component: ${pageComponentName}`);
+  return imports;
+};
 
-        // Add component type so hydration knows how to handle it
-        routeConfig.push(
-          `componentType: "${
-            routeInfo.isClientComponent ? "client" : "server"
-          }"`
-        );
+/**
+ * Generate route configuration for a single route
+ */
+const generateRouteConfig = (
+  routePath: string,
+  routeInfo: import("./router").RouteInfo,
+  layoutMap: Map<string, LayoutInfo>
+): string => {
+  const pageComponentName = generateComponentName(routeInfo.filePath, "page");
 
-        // Layout reference (only for client layouts)
-        if (layoutInfo) {
-          if (layoutInfo.type === "client") {
-            routeConfig.push(`layout: ${layoutInfo.name}`);
-          } else {
-            routeConfig.push("layout: null");
-          }
-          routeConfig.push(`layoutType: "${layoutInfo.type}"`);
-        }
+  // Get layout info
+  const layoutInfo =
+    routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)
+      ? layoutMap.get(routeInfo.layoutPath)
+      : undefined;
 
-        // Parent layouts (only client ones)
-        if (parentLayoutInfo.length > 0) {
-          const clientParentLayouts = parentLayoutInfo
-            .filter((info) => info!.type === "client")
-            .map((info) => info!.name);
+  // Get parent layout info (filter out root layout)
+  const parentLayoutInfo = routeInfo.parentLayouts
+    .filter((path) => !isRootLayout(path))
+    .map((path) => layoutMap.get(path))
+    .filter(Boolean);
 
-          const parentLayoutTypes = parentLayoutInfo.map(
-            (info) => `"${info!.type}"`
-          );
+  const routeConfig: string[] = [];
 
-          if (clientParentLayouts.length > 0) {
-            routeConfig.push(
-              `parentLayouts: [${clientParentLayouts.join(", ")}]`
-            );
-          } else {
-            routeConfig.push("parentLayouts: []");
-          }
-          routeConfig.push(
-            `parentLayoutTypes: [${parentLayoutTypes.join(", ")}]`
-          );
-        }
+  // Always include the component reference (server or client)
+  routeConfig.push(`component: ${pageComponentName}`);
 
-        if (routeInfo.isDynamic) {
-          routeConfig.push("isDynamic: true");
-        }
+  // Add component type so hydration knows how to handle it
+  routeConfig.push(
+    `componentType: "${routeInfo.isClientComponent ? "client" : "server"}"`
+  );
 
-        if (routeInfo.dynamicSegments && routeInfo.dynamicSegments.length > 0) {
-          routeConfig.push(
-            `dynamicSegments: ${JSON.stringify(routeInfo.dynamicSegments)}`
-          );
-        }
+  // Layout reference (only for client layouts)
+  if (layoutInfo) {
+    if (layoutInfo.type === "client") {
+      routeConfig.push(`layout: ${layoutInfo.name}`);
+    } else {
+      routeConfig.push("layout: null");
+    }
+    routeConfig.push(`layoutType: "${layoutInfo.type}"`);
+  }
 
-        // Add page type
-        routeConfig.push(`pageType: "${routeInfo.pageType}"`);
+  // Parent layouts (only client ones)
+  if (parentLayoutInfo.length > 0) {
+    const clientParentLayouts = parentLayoutInfo
+      .filter(
+        (info): info is NonNullable<typeof info> =>
+          info !== null && info !== undefined
+      )
+      .filter((info) => info.type === "client")
+      .map((info) => info.name);
 
-        routeEntries.push(`  "${routePath}": { ${routeConfig.join(", ")} }`);
-      }
+    const parentLayoutTypes = parentLayoutInfo
+      .filter(
+        (info): info is NonNullable<typeof info> =>
+          info !== null && info !== undefined
+      )
+      .map((info) => `"${info.type}"`);
 
-      const generatedCode = `import { lazy } from "react";
+    if (clientParentLayouts.length > 0) {
+      routeConfig.push(`parentLayouts: [${clientParentLayouts.join(", ")}]`);
+    } else {
+      routeConfig.push("parentLayouts: []");
+    }
+    routeConfig.push(`parentLayoutTypes: [${parentLayoutTypes.join(", ")}]`);
+  }
+
+  if (routeInfo.isDynamic) {
+    routeConfig.push("isDynamic: true");
+  }
+
+  if (routeInfo.dynamicSegments && routeInfo.dynamicSegments.length > 0) {
+    routeConfig.push(
+      `dynamicSegments: ${JSON.stringify(routeInfo.dynamicSegments)}`
+    );
+  }
+
+  // Add page type
+  routeConfig.push(`pageType: "${routeInfo.pageType}"`);
+
+  return `  "${routePath}": { ${routeConfig.join(", ")} }`;
+};
+
+/**
+ * Generate the complete routes module code
+ */
+const generateRoutesCode = (
+  imports: string[],
+  routeEntries: string[]
+): string => `import { lazy } from "react";
 
 ${imports.join("\n")}
 
@@ -268,10 +271,49 @@ ${routeEntries.join(",\n")}
 };
 `;
 
-      return {
-        contents: generatedCode,
-        loader: "tsx",
-      };
-    });
+/**
+ * Bundler plugin that generates a virtual routes module
+ * Scans the app directory and generates route components with RSC support
+ *
+ * Server components: Not bundled for client, rendered on server only
+ * Client components: Lazy-loaded, hydrated on client
+ */
+export const routesPlugin: BunPlugin = {
+  name: "virtual-routes",
+  setup(build) {
+    // Intercept imports of "virtual:routes"
+    build.onResolve({ filter: VIRTUAL_ROUTES_FILTER }, () => ({
+      path: "virtual:routes",
+      namespace: "virtual-routes",
+    }));
+
+    // Generate the routes module when virtual:routes is loaded
+    build.onLoad(
+      { filter: VIRTUAL_ROUTES_LOAD_FILTER, namespace: "virtual-routes" },
+      () => {
+        const routeTree = discoverRoutes("./src/app");
+        const routes = routeTree.routes;
+
+        // First pass: collect all layouts and determine types
+        const layoutMap = collectLayouts(routes);
+
+        // Second pass: generate imports
+        const imports = generateImports(routes, layoutMap);
+
+        // Third pass: generate route entries
+        const routeEntries = Array.from(routes.entries()).map(
+          ([routePath, routeInfo]) =>
+            generateRouteConfig(routePath, routeInfo, layoutMap)
+        );
+
+        // Generate the complete code
+        const generatedCode = generateRoutesCode(imports, routeEntries);
+
+        return {
+          contents: generatedCode,
+          loader: "tsx",
+        };
+      }
+    );
   },
 };
