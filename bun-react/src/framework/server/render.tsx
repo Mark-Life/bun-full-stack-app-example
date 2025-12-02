@@ -200,15 +200,20 @@ const buildComponentTree = (
  */
 const createStreamErrorHandler = (): ((error: unknown) => void) => {
   return (error: unknown) => {
-    // Ignore abort errors - these are normal when clients disconnect
-    if (
-      error instanceof Error &&
-      (error.message.includes("aborted") ||
-        error.message.includes("abort") ||
-        error.name === "AbortError")
-    ) {
-      // Client disconnected - this is expected, don't log as error
-      return;
+    // Ignore abort/close errors - these are normal when clients disconnect or navigate away
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      if (
+        msg.includes("aborted") ||
+        msg.includes("abort") ||
+        msg.includes("closed") ||
+        msg.includes("cancelled") ||
+        msg.includes("canceled") ||
+        error.name === "AbortError"
+      ) {
+        // Client disconnected or navigated away - this is expected, don't log as error
+        return;
+      }
     }
     // Log actual errors
     console.error("Error during Suspense streaming:", error);
@@ -217,77 +222,103 @@ const createStreamErrorHandler = (): ((error: unknown) => void) => {
 };
 
 /**
- * Process chunk and inject HMR script if body tag found
+ * Check if an error is a stream cancellation error (user navigated away)
  */
-const processChunkForHmr = (
-  buffer: string,
-  hmrScript: string,
-  bodyClosed: { value: boolean }
-): { injected: boolean; result: string; remaining: string } => {
-  if (!bodyClosed.value && buffer.includes("</body>")) {
-    const parts = buffer.split("</body>");
-    if (parts.length === 2) {
-      const beforeBody = parts[0];
-      const afterBody = parts[1];
-      bodyClosed.value = true;
-      return {
-        injected: true,
-        result: `${beforeBody}${hmrScript}</body>${afterBody}`,
-        remaining: "",
-      };
-    }
+const isStreamCancelError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
   }
-  return { injected: false, result: "", remaining: buffer };
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes("closed") ||
+    msg.includes("cancelled") ||
+    msg.includes("canceled") ||
+    msg.includes("aborted")
+  );
 };
 
 /**
- * Wrap stream with HMR script injection
+ * Safely close a stream controller
  */
-const wrapStreamWithHmr = (
-  stream: ReadableStream<Uint8Array>,
-  hmrScript: string
+const safeCloseController = (
+  controller: ReadableStreamDefaultController<Uint8Array>
+): void => {
+  try {
+    controller.close();
+  } catch {
+    // Controller may already be closed
+  }
+};
+
+/**
+ * Create a stream that actively consumes React's stream and forwards chunks
+ * This ensures React continues processing Suspense boundaries
+ * Also handles cancellation gracefully when user navigates away
+ *
+ * @param reactStream - The stream from renderToReadableStream
+ * @param abortController - AbortController to signal React to stop processing
+ */
+const createActiveStream = (
+  reactStream: ReadableStream<Uint8Array>,
+  abortController: AbortController
 ): ReadableStream<Uint8Array> => {
+  const reader = reactStream.getReader();
+  let cancelled = false;
+
+  const handlePullError = (
+    error: unknown,
+    controller: ReadableStreamDefaultController<Uint8Array>
+  ): void => {
+    if (cancelled) {
+      return;
+    }
+
+    if (isStreamCancelError(error)) {
+      safeCloseController(controller);
+    } else {
+      controller.error(error);
+    }
+  };
+
+  const handleCancel = async (_reason: unknown): Promise<void> => {
+    cancelled = true;
+    // Signal React to abort - this is the key to preventing the error
+    // React will clean up its internal state properly when aborted
+    abortController.abort();
+    try {
+      await reactStream.cancel();
+    } catch {
+      // Ignore cancel errors - stream may already be closed
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore release errors - reader may already be released
+    }
+  };
+
   return new ReadableStream({
-    async start(controller) {
-      const reader = stream.getReader();
-      let buffer = "";
-      const bodyClosed = { value: false };
+    async pull(controller) {
+      if (cancelled) {
+        return;
+      }
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
+        const { done, value } = await reader.read();
+        if (done) {
+          if (!cancelled) {
+            safeCloseController(controller);
           }
-
-          const chunk = new TextDecoder().decode(value, { stream: true });
-          buffer += chunk;
-
-          const processed = processChunkForHmr(buffer, hmrScript, bodyClosed);
-          if (processed.injected) {
-            controller.enqueue(new TextEncoder().encode(processed.result));
-            buffer = processed.remaining;
-            continue;
-          }
-          buffer = processed.remaining;
-
-          // Forward chunks as they come
+          return;
+        }
+        if (!cancelled) {
           controller.enqueue(value);
         }
-
-        // If we never found </body>, append HMR script at the end
-        if (!bodyClosed.value && buffer) {
-          const withHMR = `${buffer}${hmrScript}`;
-          controller.enqueue(new TextEncoder().encode(withHMR));
-        }
-
-        controller.close();
       } catch (error) {
-        controller.error(error);
-      } finally {
-        reader.releaseLock();
+        handlePullError(error, controller);
       }
     },
+    cancel: handleCancel,
   });
 };
 
@@ -406,14 +437,21 @@ export const renderRoute = async (
       needsHydration,
     });
 
+    // Create AbortController to signal React when the stream is cancelled
+    // This allows React to clean up properly when user navigates away
+    const abortController = new AbortController();
+
     // Render to stream with Suspense support
     // bootstrapModules injects scripts after content streams (for hydration)
     // onError handles errors during Suspense resolution
+    // signal allows React to abort cleanly when user navigates away
     const streamOptions: {
       bootstrapModules?: string[];
       onError: (error: unknown) => void;
+      signal: AbortSignal;
     } = {
       onError: createStreamErrorHandler(),
+      signal: abortController.signal,
     };
 
     if (needsHydration) {
@@ -424,12 +462,18 @@ export const renderRoute = async (
     // For async Server Components with Suspense, React streams fallbacks first,
     // then streams resolved content as promises resolve. The key is that React
     // needs the stream to be actively consumed for it to continue streaming.
-    const stream = await renderToReadableStream(component, streamOptions);
+    // Note: HMR script is injected directly in RootShell component to avoid
+    // breaking React's streaming format by manipulating chunks
+    const reactStream = await renderToReadableStream(component, streamOptions);
 
-    const hmrScript = getHmrScript();
-    const wrappedStream = wrapStreamWithHmr(stream, hmrScript);
+    // Wrap React's stream in an active consumer stream
+    // This ensures React continues processing Suspense boundaries by actively
+    // pulling chunks from the stream. Without this, Bun's Response may not
+    // consume the stream fast enough for React to continue processing.
+    // Pass the AbortController so we can signal React to abort when cancelled.
+    const stream = createActiveStream(reactStream, abortController);
 
-    return new Response(wrappedStream, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
       },

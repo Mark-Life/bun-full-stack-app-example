@@ -64,6 +64,73 @@ export const RootShell = ({
           type="application/json"
         />
         {/* Hydration script is injected via bootstrapModules in renderToReadableStream */}
+        {process.env.NODE_ENV !== "production" && (
+          <script
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: HMR script injection required for dev mode
+            dangerouslySetInnerHTML={{
+              __html: `
+      (function() {
+        if (typeof window === 'undefined') return;
+        
+        let ws;
+        let reconnectTimeout;
+        
+        const connectHMR = () => {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          ws = new WebSocket(protocol + '//' + window.location.host + '/hmr');
+          
+          ws.onopen = () => {
+            console.log('[HMR] Connected');
+            if (reconnectTimeout) {
+              clearTimeout(reconnectTimeout);
+              reconnectTimeout = null;
+            }
+          };
+          
+          ws.onmessage = (event) => {
+            try {
+              const message = JSON.parse(event.data);
+              if (message.type === 'hmr-update') {
+                console.log('[HMR] File changed:', message.file);
+                
+                // Reload CSS files
+                if (message.file.endsWith('.css')) {
+                  const links = document.querySelectorAll('link[rel="stylesheet"]');
+                  links.forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href) {
+                      const newHref = href.split('?')[0] + '?t=' + Date.now();
+                      link.setAttribute('href', newHref);
+                    }
+                  });
+                } else {
+                  // Reload page for JS/TS/HTML/route changes
+                  window.location.reload();
+                }
+              }
+            } catch (e) {
+              // Ignore non-JSON messages
+            }
+          };
+          
+          ws.onerror = (error) => {
+            console.error('[HMR] WebSocket error:', error);
+          };
+          
+          ws.onclose = () => {
+            console.log('[HMR] Disconnected, reconnecting...');
+            reconnectTimeout = setTimeout(() => {
+              connectHMR();
+            }, 1000);
+          };
+        };
+        
+        connectHMR();
+      })();
+    `,
+            }}
+          />
+        )}
       </body>
     </html>
   );
