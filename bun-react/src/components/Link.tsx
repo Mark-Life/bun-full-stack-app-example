@@ -1,4 +1,6 @@
-import { useRouter } from "@/framework/client/router";
+"use client";
+
+import { useRouter } from "~/framework/client/router";
 import { type ReactNode, type MouseEvent, useState, useEffect } from "react";
 
 interface LinkProps {
@@ -39,3 +41,4 @@ export const Link = ({ href, children, className, onClick }: LinkProps) => {
     </a>
   );
 };
+
