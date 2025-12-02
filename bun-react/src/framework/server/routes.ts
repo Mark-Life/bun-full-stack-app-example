@@ -47,7 +47,7 @@ export const matchAndRenderRoute = (
 ): Promise<Response> | null => {
   const matchResult = matchRoute(pathname, routeTree.routes);
   if (matchResult) {
-    return renderRoute(matchResult.route);
+    return renderRoute(matchResult.route, matchResult.params);
   }
   return null;
 };

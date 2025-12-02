@@ -61,7 +61,6 @@ bun start    # production
 
 ### Not Yet Implemented
 
-- [ ] **Dynamic Route Demo** - Example page demonstrating dynamic route parameters (`[param]` and `[...param]`)
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Incremental Static Regeneration (ISR)** - On-demand revalidation
 - [ ] **Client-side Navigation** - Currently full page reload. add functionality to use SPA-style `pushState`

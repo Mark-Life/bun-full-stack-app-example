@@ -30,7 +30,11 @@ const generateComponentName = (
     .map((part) => {
       // Convert dynamic segments to PascalCase
       if (part.startsWith("[") && part.endsWith("]")) {
-        const param = part.slice(1, -1);
+        let param = part.slice(1, -1);
+        // Handle catch-all routes: [...param] -> extract just "param"
+        if (param.startsWith("...")) {
+          param = param.slice(3);
+        }
         return param.charAt(0).toUpperCase() + param.slice(1);
       }
       // Convert kebab-case and snake_case to PascalCase

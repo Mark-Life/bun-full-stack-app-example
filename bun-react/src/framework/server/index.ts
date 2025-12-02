@@ -7,11 +7,7 @@ import { generateRouteTypes } from "~/framework/shared/generate-route-types";
 import { applyMiddleware } from "~/framework/shared/middleware";
 import middlewareConfig from "~/middleware";
 import { discoverPublicAssets } from "./public";
-import {
-  buildRouteHandlers,
-  matchAndRenderRoute,
-  rediscoverRoutes,
-} from "./routes";
+import { matchAndRenderRoute, rediscoverRoutes } from "./routes";
 
 /**
  * Build and cache the hydration bundle
@@ -198,9 +194,6 @@ const serverConfig = {
         headers: { "Content-Type": "text/html" },
       });
     },
-
-    // Add discovered route handlers
-    ...buildRouteHandlers(),
   },
 
   development: process.env.NODE_ENV !== "production" && {
@@ -372,9 +365,6 @@ const reloadRoutes = async (): Promise<void> => {
             headers: { "Content-Type": "text/html" },
           });
         },
-
-        // Add discovered route handlers
-        ...buildRouteHandlers(),
       },
     });
 

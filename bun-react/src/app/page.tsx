@@ -47,7 +47,7 @@ export default function HomePage() {
             <p className="mb-4 text-muted-foreground text-sm">
               Test the app router:
             </p>
-            <div className="flex justify-center gap-4">
+            <div className="flex flex-wrap justify-center gap-4">
               <Link
                 className="font-medium text-blue-600 hover:underline"
                 href="/landing"
@@ -77,6 +77,25 @@ export default function HomePage() {
                 href="/suspense-demo"
               >
                 Suspense Demo
+              </Link>
+            </div>
+          </div>
+          <div className="border-t pt-4">
+            <p className="mb-4 text-muted-foreground text-sm">
+              Dynamic Routes:
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <Link
+                className="font-medium text-green-600 hover:underline"
+                href="/products/123"
+              >
+                [id] - Product 123
+              </Link>
+              <Link
+                className="font-medium text-green-600 hover:underline"
+                href="/catch-all/nested/path/example"
+              >
+                [...path] - Catch-All
               </Link>
             </div>
           </div>

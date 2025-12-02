@@ -347,10 +347,10 @@ export const renderRouteToString = async (
     const needsHydration = hasClientComponents(routeInfo);
 
     // Build props with params and data
-    const pageProps: Record<string, unknown> = {};
-    if (Object.keys(params).length > 0) {
-      pageProps["params"] = params;
-    }
+    // Always pass params for dynamic routes, default to empty object
+    const pageProps: Record<string, unknown> = {
+      params: params || {},
+    };
     if (data !== undefined) {
       pageProps["data"] = data;
     }
@@ -423,10 +423,10 @@ export const renderRoute = async (
     const needsHydration = hasClientComponents(routeInfo);
 
     // Build props with params and data
-    const pageProps: Record<string, unknown> = {};
-    if (Object.keys(params).length > 0) {
-      pageProps["params"] = params;
-    }
+    // Always pass params for dynamic routes, default to empty object
+    const pageProps: Record<string, unknown> = {
+      params: params || {},
+    };
     if (pageData !== undefined) {
       pageProps["data"] = pageData;
     }
