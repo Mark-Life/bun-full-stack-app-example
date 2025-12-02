@@ -40,11 +40,9 @@ export const discoverPublicAssets = async (
 		} catch (error) {
 			// Directory doesn't exist or can't be read - silently skip
 			// This allows the server to start even if public/ doesn't exist yet
-			if (
-				error instanceof Error &&
-				"code" in error &&
-				error.code !== "ENOENT"
-			) {
+			const isNotFoundError =
+				error instanceof Error && "code" in error && error.code === "ENOENT";
+			if (!isNotFoundError) {
 				console.warn(`Failed to scan public directory ${currentDir}:`, error);
 			}
 		}

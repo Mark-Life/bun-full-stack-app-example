@@ -16,9 +16,9 @@ const fetchData = async (delay: number): Promise<string> => {
 const AsyncData = async ({ delay }: { delay: number }) => {
   const data = await fetchData(delay);
   return (
-    <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+    <div className="rounded-lg border border-primary/20 bg-primary/10 p-4">
       <p className="font-semibold text-primary">✅ {data}</p>
-      <p className="text-sm text-muted-foreground mt-2">
+      <p className="mt-2 text-muted-foreground text-sm">
         This content streamed in after the initial HTML shell
       </p>
     </div>
@@ -29,9 +29,9 @@ const AsyncData = async ({ delay }: { delay: number }) => {
  * Loading fallback component
  */
 const LoadingFallback = () => (
-  <div className="p-4 bg-muted rounded-lg animate-pulse">
+  <div className="animate-pulse rounded-lg bg-muted p-4">
     <p className="font-semibold text-foreground">⏳ Loading...</p>
-    <p className="text-sm text-muted-foreground mt-2">
+    <p className="mt-2 text-muted-foreground text-sm">
       This fallback shows while data is being fetched
     </p>
   </div>
@@ -42,20 +42,20 @@ const LoadingFallback = () => (
  */
 export default function SuspenseDemoPage() {
   return (
-    <div className="container mx-auto p-8 max-w-4xl">
+    <div className="container mx-auto max-w-4xl p-8">
       <div className="mb-6">
         <Link
+          className="inline-flex items-center gap-1 font-medium text-muted-foreground text-sm hover:text-foreground"
           href="/"
-          className="text-muted-foreground hover:text-foreground text-sm font-medium inline-flex items-center gap-1"
         >
           ← Back to Home
         </Link>
       </div>
-      <h1 className="text-4xl font-bold mb-6">Suspense Streaming Demo</h1>
+      <h1 className="mb-6 font-bold text-4xl">Suspense Streaming Demo</h1>
 
-      <div className="mb-8 p-4 bg-muted rounded-lg">
-        <p className="font-semibold mb-2 text-foreground">How it works:</p>
-        <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+      <div className="mb-8 rounded-lg bg-muted p-4">
+        <p className="mb-2 font-semibold text-foreground">How it works:</p>
+        <ol className="list-inside list-decimal space-y-1 text-muted-foreground text-sm">
           <li>Initial HTML shell streams immediately</li>
           <li>Suspense fallback shows while async data loads</li>
           <li>Content streams in progressively as promises resolve</li>
@@ -65,29 +65,29 @@ export default function SuspenseDemoPage() {
 
       <div className="space-y-6">
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Fast Data (500ms)</h2>
+          <h2 className="mb-4 font-semibold text-2xl">Fast Data (500ms)</h2>
           <Suspense fallback={<LoadingFallback />}>
             <AsyncData delay={500} />
           </Suspense>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Medium Data (1500ms)</h2>
+          <h2 className="mb-4 font-semibold text-2xl">Medium Data (1500ms)</h2>
           <Suspense fallback={<LoadingFallback />}>
             <AsyncData delay={1500} />
           </Suspense>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Slow Data (3000ms)</h2>
+          <h2 className="mb-4 font-semibold text-2xl">Slow Data (3000ms)</h2>
           <Suspense fallback={<LoadingFallback />}>
             <AsyncData delay={3000} />
           </Suspense>
         </section>
       </div>
 
-      <div className="mt-8 p-4 bg-muted rounded-lg">
-        <p className="text-sm text-muted-foreground">
+      <div className="mt-8 rounded-lg bg-muted p-4">
+        <p className="text-muted-foreground text-sm">
           <strong className="text-foreground">Tip:</strong> Open DevTools
           Network tab and watch the HTML stream arrive in chunks. The page shell
           appears first, then each Suspense boundary resolves and streams in its

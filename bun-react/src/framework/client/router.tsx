@@ -1,9 +1,9 @@
 import {
+  createContext,
+  type ReactNode,
+  useContext,
   useEffect,
   useState,
-  type ReactNode,
-  createContext,
-  useContext,
 } from "react";
 
 /**
@@ -68,13 +68,11 @@ interface RouteParamsProviderProps {
 export const RouteParamsProvider = ({
   children,
   params,
-}: RouteParamsProviderProps) => {
-  return (
-    <RouteParamsContext.Provider value={{ params }}>
-      {children}
-    </RouteParamsContext.Provider>
-  );
-};
+}: RouteParamsProviderProps) => (
+  <RouteParamsContext.Provider value={{ params }}>
+    {children}
+  </RouteParamsContext.Provider>
+);
 
 /**
  * Router provider component that handles client-side routing

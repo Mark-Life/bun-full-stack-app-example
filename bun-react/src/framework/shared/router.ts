@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, statSync } from "fs";
-import { join, relative, dirname } from "path";
+import { dirname, join, relative } from "path";
 import {
-  hasUseClientDirective,
-  hasClientBoundariesSync,
   type ComponentType,
+  hasClientBoundariesSync,
+  hasUseClientDirective,
 } from "~/framework/shared/rsc";
 
 /**
@@ -39,16 +39,13 @@ export interface RouteTree {
 /**
  * Check if a file is a route file
  */
-const isRouteFile = (filename: string): boolean => {
-  return ROUTE_FILES.includes(filename);
-};
+const isRouteFile = (filename: string): boolean =>
+  ROUTE_FILES.includes(filename);
 
 /**
  * Check if a file is a layout file
  */
-const isLayoutFile = (filename: string): boolean => {
-  return filename === LAYOUT_FILE;
-};
+const isLayoutFile = (filename: string): boolean => filename === LAYOUT_FILE;
 
 /**
  * Extract dynamic segments from a path segment
@@ -292,7 +289,7 @@ const toImportPath = (filePath: string, baseDir: string): string => {
 /**
  * Discover all routes in the app directory
  */
-export const discoverRoutes = (appDir: string = "./src/app"): RouteTree => {
+export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
   const routes = new Map<string, RouteInfo>();
   const layouts = new Map<string, string>();
 

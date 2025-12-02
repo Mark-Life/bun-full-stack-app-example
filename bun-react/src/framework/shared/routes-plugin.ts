@@ -88,15 +88,12 @@ export const routesPlugin: BunPlugin = {
       /**
        * Check if layout is the root layout (renders <html>)
        */
-      const isRootLayout = (layoutPath: string): boolean => {
-        return (
-          layoutPath === "./app/layout.tsx" ||
-          layoutPath === "./src/app/layout.tsx" ||
-          layoutPath === "~/app/layout.tsx" ||
-          layoutPath.endsWith("/app/layout.tsx") ||
-          layoutPath.endsWith("/src/app/layout.tsx")
-        );
-      };
+      const isRootLayout = (layoutPath: string): boolean =>
+        layoutPath === "./app/layout.tsx" ||
+        layoutPath === "./src/app/layout.tsx" ||
+        layoutPath === "~/app/layout.tsx" ||
+        layoutPath.endsWith("/app/layout.tsx") ||
+        layoutPath.endsWith("/src/app/layout.tsx");
 
       // First pass: collect all layouts and determine types
       for (const [, routeInfo] of routes.entries()) {
@@ -107,8 +104,7 @@ export const routesPlugin: BunPlugin = {
         // Parent layouts
         for (const parentLayoutPath of routeInfo.parentLayouts) {
           if (
-            !layoutMap.has(parentLayoutPath) &&
-            !isRootLayout(parentLayoutPath)
+            !(layoutMap.has(parentLayoutPath) || isRootLayout(parentLayoutPath))
           ) {
             const layoutType = layoutTypes[typeIndex] || "server";
             layoutMap.set(parentLayoutPath, {
@@ -120,14 +116,16 @@ export const routesPlugin: BunPlugin = {
         }
 
         // Direct layout
-        if (routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)) {
-          if (!layoutMap.has(routeInfo.layoutPath)) {
-            const layoutType = layoutTypes[typeIndex] || "server";
-            layoutMap.set(routeInfo.layoutPath, {
-              name: generateComponentName(routeInfo.layoutPath, "layout"),
-              type: layoutType,
-            });
-          }
+        if (
+          routeInfo.layoutPath &&
+          !isRootLayout(routeInfo.layoutPath) &&
+          !layoutMap.has(routeInfo.layoutPath)
+        ) {
+          const layoutType = layoutTypes[typeIndex] || "server";
+          layoutMap.set(routeInfo.layoutPath, {
+            name: generateComponentName(routeInfo.layoutPath, "layout"),
+            type: layoutType,
+          });
         }
       }
 
@@ -196,7 +194,7 @@ export const routesPlugin: BunPlugin = {
           if (layoutInfo.type === "client") {
             routeConfig.push(`layout: ${layoutInfo.name}`);
           } else {
-            routeConfig.push(`layout: null`);
+            routeConfig.push("layout: null");
           }
           routeConfig.push(`layoutType: "${layoutInfo.type}"`);
         }
@@ -216,7 +214,7 @@ export const routesPlugin: BunPlugin = {
               `parentLayouts: [${clientParentLayouts.join(", ")}]`
             );
           } else {
-            routeConfig.push(`parentLayouts: []`);
+            routeConfig.push("parentLayouts: []");
           }
           routeConfig.push(
             `parentLayoutTypes: [${parentLayoutTypes.join(", ")}]`
@@ -224,7 +222,7 @@ export const routesPlugin: BunPlugin = {
         }
 
         if (routeInfo.isDynamic) {
-          routeConfig.push(`isDynamic: true`);
+          routeConfig.push("isDynamic: true");
         }
 
         if (routeInfo.dynamicSegments && routeInfo.dynamicSegments.length > 0) {

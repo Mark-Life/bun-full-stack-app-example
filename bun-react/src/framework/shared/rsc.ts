@@ -3,7 +3,7 @@
  * Handles detection of "use client" directive and component classification
  */
 
-import { readFileSync, existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 
 /**
  * Check if a file has the "use client" directive at the top
@@ -66,9 +66,8 @@ export type ComponentType = "server" | "client";
 /**
  * Determine component type from file path
  */
-export const getComponentType = (filePath: string): ComponentType => {
-  return hasUseClientDirective(filePath) ? "client" : "server";
-};
+export const getComponentType = (filePath: string): ComponentType =>
+  hasUseClientDirective(filePath) ? "client" : "server";
 
 /**
  * Scan imports in a file to find client component boundaries

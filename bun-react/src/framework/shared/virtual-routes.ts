@@ -1,7 +1,7 @@
 import type {
+  LazyExoticComponent,
   ComponentType as ReactComponentType,
   ReactNode,
-  LazyExoticComponent,
 } from "react";
 
 /**

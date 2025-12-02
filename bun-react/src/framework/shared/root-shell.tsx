@@ -47,20 +47,20 @@ export const RootShell = ({
     <html lang="en">
       <head>
         <meta charSet="UTF-8" />
-        <meta name="viewport" content={viewport} />
-        <meta name="description" content={description} />
+        <meta content={viewport} name="viewport" />
+        <meta content={description} name="description" />
         <title>{title}</title>
-        <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-        <link rel="stylesheet" href="/index.css" />
+        <link href="/logo.svg" rel="icon" type="image/svg+xml" />
+        <link href="/index.css" rel="stylesheet" />
       </head>
       <body>
         <div id="root">{children}</div>
         <script
-          id="__ROUTE_DATA__"
-          type="application/json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(routeData),
           }}
+          id="__ROUTE_DATA__"
+          type="application/json"
         />
         {/* Hydration script is injected via bootstrapModules in renderToReadableStream */}
       </body>

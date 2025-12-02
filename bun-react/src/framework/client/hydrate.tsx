@@ -7,10 +7,10 @@
  * - Client components: Full hydration with React
  */
 
-import { StrictMode, Suspense, type ReactNode } from "react";
+import { type RouteConfig, routes } from "virtual:routes";
+import { type ReactNode, StrictMode, Suspense } from "react";
 import { hydrateRoot } from "react-dom/client";
-import { RouterProvider, RouteParamsProvider } from "./router";
-import { routes, type RouteConfig } from "virtual:routes";
+import { RouteParamsProvider, RouterProvider } from "./router";
 
 // Validate routes are loaded
 if (!routes || Object.keys(routes).length === 0) {
