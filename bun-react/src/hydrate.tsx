@@ -179,11 +179,19 @@ const hydrate = () => {
   }
 
   // Check if route needs hydration (has client components)
-  if (!needsHydration(matchResult.route) && !hasClientComponents) {
-    console.log(
-      `[RSC] Route "${routePath}" is a server component - no hydration needed`
-    );
-    return;
+  // For server component pages with async components, we can't hydrate because
+  // async components can't run on the client. Skip hydration if no client components.
+  if (!needsHydration(matchResult.route)) {
+    // Only hydrate if server explicitly marked it as having client components
+    // This prevents trying to hydrate pure server component pages with async components
+    if (!hasClientComponents) {
+      console.log(
+        `[RSC] Route "${routePath}" is a pure server component - no hydration needed`
+      );
+      return;
+    }
+    // If server says it has client components but route doesn't, it might have client boundaries
+    // Try to hydrate, but React will handle any async component errors gracefully
   }
 
   hydrateRoute(matchResult.route, matchResult.params, root);
@@ -220,11 +228,9 @@ const hydrateRoute = (
   // Apply layouts from outermost to innermost (parentLayouts -> layout -> page)
   // Note: Root layout (app/layout.tsx) is excluded from routes by the plugin
   // since it wraps RootShell which renders <html> - already in the DOM
-  let pageContent: ReactNode = (
-    <Suspense fallback={null}>
-      <PageComponent />
-    </Suspense>
-  );
+  // For server component pages, don't wrap in Suspense - Suspense boundaries
+  // are already in the component tree and wrapping causes hydration mismatches
+  let pageContent: ReactNode = <PageComponent />;
 
   // Apply direct layout if present and is a client component
   if (LayoutComponent && route.layoutType === "client") {

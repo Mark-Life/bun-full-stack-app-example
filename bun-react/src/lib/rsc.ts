@@ -113,3 +113,44 @@ export const findClientBoundaries = async (
 
   return clientImports;
 };
+
+/**
+ * Sync version of findClientBoundaries for use during route discovery
+ * Returns true if the file imports any client components
+ */
+export const hasClientBoundariesSync = (filePath: string): boolean => {
+  if (!existsSync(filePath)) {
+    return false;
+  }
+
+  const content = readFileSync(filePath, "utf-8");
+
+  // Simple regex to find imports
+  const importRegex = /import\s+.*\s+from\s+["']([^"']+)["']/g;
+  let match;
+
+  const { dirname, join } = require("path");
+
+  while ((match = importRegex.exec(content)) !== null) {
+    const importPath = match[1];
+    if (importPath) {
+      // Resolve relative imports
+      if (importPath.startsWith(".")) {
+        const resolvedPath = join(dirname(filePath), importPath);
+
+        // Try common extensions
+        const extensions = [".tsx", ".ts", ".jsx", ".js"];
+        for (const ext of extensions) {
+          const fullPath = resolvedPath.endsWith(ext)
+            ? resolvedPath
+            : `${resolvedPath}${ext}`;
+          if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+};

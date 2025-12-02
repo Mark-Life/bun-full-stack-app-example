@@ -5,12 +5,12 @@ import { discoverRoutes, matchRoute, type RouteInfo } from "./lib/router";
 import { routesPlugin } from "./lib/routes-plugin";
 
 /**
- * Check if a route has any client components (page or layouts)
+ * Check if a route has any client components (page, layouts, or imported)
  *
- * Note: This currently only checks the page/layout files themselves.
- * A server component page may still import client components (client boundaries).
- * For now, we default to true to ensure hydration happens for such cases.
- * Future improvement: scan imports to detect client boundaries.
+ * Returns true if:
+ * - The page itself is a client component ("use client")
+ * - Any layout is a client component
+ * - The page imports any client components (client boundaries)
  */
 const hasClientComponents = (routeInfo: RouteInfo): boolean => {
   // Check if page is a client component
@@ -23,9 +23,13 @@ const hasClientComponents = (routeInfo: RouteInfo): boolean => {
     return true;
   }
 
-  // Default to true - server component pages may contain client component imports
-  // The hydration code will handle the case where nothing needs hydration
-  return true;
+  // Check if page imports any client components (has client boundaries)
+  if (routeInfo.hasClientBoundaries) {
+    return true;
+  }
+
+  // Return false for pure server component pages with no client imports
+  return false;
 };
 
 /**
@@ -102,10 +106,69 @@ const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
       }
     }
 
-    // Render to stream
-    const stream = await renderToReadableStream(component);
-    return new Response(stream, {
-      headers: { "Content-Type": "text/html" },
+    // Render to stream with Suspense support
+    // bootstrapModules injects scripts after content streams (for hydration)
+    // onError handles errors during Suspense resolution
+    const streamOptions: {
+      bootstrapModules?: string[];
+      onError: (error: unknown) => void;
+    } = {
+      onError: (error: unknown) => {
+        // Ignore abort errors - these are normal when clients disconnect
+        if (
+          error instanceof Error &&
+          (error.message.includes("aborted") ||
+            error.message.includes("abort") ||
+            error.name === "AbortError")
+        ) {
+          // Client disconnected - this is expected, don't log as error
+          return;
+        }
+        // Log actual errors
+        console.error("Error during Suspense streaming:", error);
+        // Let React handle error boundaries
+      },
+    };
+
+    if (needsHydration) {
+      streamOptions.bootstrapModules = ["/hydrate.js"];
+    }
+
+    // Render to stream - React will handle Suspense boundaries automatically
+    // For async Server Components with Suspense, React streams fallbacks first,
+    // then streams resolved content as promises resolve. The key is that React
+    // needs the stream to be actively consumed for it to continue streaming.
+    const stream = await renderToReadableStream(component, streamOptions);
+
+    // Create a wrapper stream that ensures React's stream is consumed actively
+    // This is necessary for React to continue resolving Suspense boundaries
+    // and stream content progressively. Without active consumption, React
+    // may wait for all promises to resolve before streaming.
+    const wrappedStream = new ReadableStream({
+      async start(controller) {
+        const reader = stream.getReader();
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            // Immediately forward chunks to ensure React continues streaming
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        } finally {
+          reader.releaseLock();
+        }
+      },
+    });
+
+    return new Response(wrappedStream, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+      },
     });
   } catch (error) {
     console.error(`Error rendering route ${routeInfo.path}:`, error);

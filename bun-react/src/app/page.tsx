@@ -62,6 +62,12 @@ export default function HomePage() {
               >
                 Getting Started
               </Link>
+              <Link
+                href="/suspense-demo"
+                className="text-blue-600 hover:underline font-medium"
+              >
+                Suspense Demo
+              </Link>
             </div>
           </div>
         </CardContent>

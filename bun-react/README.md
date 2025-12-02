@@ -29,13 +29,19 @@ bun start    # production
 ### Implemented (RSC Support)
 
 - [x] **React Server Components (RSC)** - Server-first model with client boundaries
+
   - Default: Server components (no directive)
   - `"use client"` directive marks client component boundaries
   - Server components can contain client components
+  - Automatic client boundary detection for proper hydration
+
+- [x] **Suspense Streaming** - Progressive render with loading fallbacks
+  - Async Server Components stream progressively as promises resolve
+  - Suspense boundaries show fallbacks immediately, then stream resolved content
+  - Works with `renderToReadableStream` for true progressive HTML streaming
 
 ### Not Yet Implemented
 
-- [ ] **Suspense Streaming** - Progressive render with loading fallbacks
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Server Functions / Data Loaders** - `getServerSideProps`-style data fetching
 - [ ] **Static Site Generation (SSG)** - Build-time pre-rendering
@@ -50,7 +56,8 @@ bun start    # production
 
 ```
 Request → Match route → Render (server + client components)
-       → Stream HTML → Hydrate client components only
+       → Stream HTML progressively (Suspense fallbacks → resolved content)
+       → Hydrate client components only (if present)
 ```
 
 ### RSC Flow
@@ -58,6 +65,14 @@ Request → Match route → Render (server + client components)
 1. **No directive** = Server component (render once on server)
 2. **`"use client"`** = Client component boundary (hydrates for interactivity)
 3. Server components can import client components (client boundaries)
+4. **Async Server Components** = Can use Suspense for progressive streaming
+
+### Suspense Streaming
+
+- Async Server Components suspend during SSR until promises resolve
+- Suspense boundaries stream fallbacks first, then resolved content
+- Pure server component pages (no client boundaries) skip hydration
+- Pages with client components hydrate only the client parts
 
 ---
 

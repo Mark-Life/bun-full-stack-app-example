@@ -62,10 +62,7 @@ export const RootShell = ({
             __html: JSON.stringify(routeData),
           }}
         />
-        {/* Only include hydration script if there are client components */}
-        {hasClientComponents && (
-          <script type="module" src="/hydrate.js" async />
-        )}
+        {/* Hydration script is injected via bootstrapModules in renderToReadableStream */}
       </body>
     </html>
   );

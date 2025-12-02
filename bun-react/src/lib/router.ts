@@ -1,6 +1,10 @@
 import { existsSync, readdirSync, statSync } from "fs";
 import { join, relative, dirname } from "path";
-import { hasUseClientDirective, type ComponentType } from "./rsc";
+import {
+  hasUseClientDirective,
+  hasClientBoundariesSync,
+  type ComponentType,
+} from "./rsc";
 
 /**
  * Route file names that create routes
@@ -23,6 +27,8 @@ export interface RouteInfo {
   isClientComponent: boolean;
   /** Whether each layout is a client component (parallel to parentLayouts + layoutPath) */
   layoutTypes: ComponentType[];
+  /** Whether the page imports any client components (has client boundaries) */
+  hasClientBoundaries: boolean;
 }
 
 export interface RouteTree {
@@ -239,6 +245,9 @@ const scanDirectory = (
         // Check if the page itself is a client component
         const isClientComponent = hasUseClientDirective(fullPath);
 
+        // Check if the page imports any client components (has client boundaries)
+        const hasClientBoundaries = hasClientBoundariesSync(fullPath);
+
         const routeInfo: RouteInfo = {
           path: routePath,
           filePath: fullPath,
@@ -246,6 +255,7 @@ const scanDirectory = (
           isDynamic,
           isClientComponent,
           layoutTypes,
+          hasClientBoundaries,
           ...(dynamicSegments.length > 0 && { dynamicSegments }),
         };
         if (layoutPath) {
@@ -300,6 +310,7 @@ export const discoverRoutes = (appDir: string = "./src/app"): RouteTree => {
       ),
       isClientComponent: routeInfo.isClientComponent,
       layoutTypes: routeInfo.layoutTypes,
+      hasClientBoundaries: routeInfo.hasClientBoundaries,
     };
     if (routeInfo.layoutPath) {
       updatedRouteInfo.layoutPath = toImportPath(routeInfo.layoutPath, srcDir);
