@@ -78,6 +78,12 @@ export default function HomePage() {
               >
                 Suspense Demo
               </Link>
+              <Link
+                className="font-medium text-purple-600 hover:underline"
+                href="/dashboard"
+              >
+                Dashboard (Client Nav)
+              </Link>
             </div>
           </div>
           <div className="border-t pt-4">

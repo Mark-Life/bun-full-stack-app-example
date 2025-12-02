@@ -23,7 +23,7 @@ bun start    # production
 - [x] **Tailwind CSS** - Bundled via `bun-plugin-tailwind`
 - [x] **Public Assets Management** - `src/public/` folder for static assets (icons, images, fonts, etc.) automatically served at root path
 
-### Implemented (RSC Support)
+### Implemented
 
 - [x] **React Server Components (RSC)** - Server-first model with client boundaries
 
@@ -64,11 +64,19 @@ bun start    # production
   - Supports layouts, SSR, and client components
   - Automatically returns HTTP 404 status
 
+### Implemented (Client-Side Navigation)
+
+- [x] **Client-Side Navigation** - SPA-style navigation for route groups
+  - Layout-based opt-in with `clientNavigation: true`
+  - Uses `pushState` for instant navigation without page reloads
+  - Layouts persist during navigation
+  - Browser back/forward buttons work correctly
+  - Automatic fallback to full page reload when leaving client-navigable groups
+
 ### Not Yet Implemented
 
 - [ ] **`loading.tsx`** - Route-level loading states
 - [ ] **Incremental Static Regeneration (ISR)** - On-demand revalidation
-- [ ] **Client-side Navigation** - Currently full page reload. add functionality to use SPA-style `pushState`
 
 ## Architecture
 
@@ -317,6 +325,98 @@ The `not-found.tsx` component:
 - Supports both server and client components
 - Receives no props (no params or data)
 - Returns HTTP status 404 automatically
+
+#### Client-Side Navigation
+
+Enable SPA-style navigation for specific route groups using `defineLayout()` with `clientNavigation: true`. All child routes under that layout will use client-side navigation (no page reloads).
+
+**Basic Layout with Client Navigation**
+
+```typescript
+// app/dashboard/layout.tsx
+import { defineLayout } from "~/framework/shared/layout";
+import { Link } from "@/components/link";
+
+export default defineLayout({
+  clientNavigation: true, // Enable client-side navigation for all /dashboard/* routes
+  component: ({ children }) => (
+    <div className="min-h-screen bg-background">
+      <nav className="border-b bg-card shadow-sm">
+        <div className="container mx-auto px-4">
+          <div className="flex h-16 items-center justify-between">
+            <h1 className="text-xl font-bold">Dashboard</h1>
+            <div className="flex gap-4">
+              <Link href="/dashboard">Home</Link>
+              <Link href="/dashboard/settings">Settings</Link>
+              <Link href="/dashboard/profile">Profile</Link>
+            </div>
+          </div>
+        </div>
+      </nav>
+      <main className="container mx-auto p-8">{children}</main>
+    </div>
+  ),
+});
+```
+
+**How It Works**
+
+1. **Layout-Based**: Add `clientNavigation: true` to a layout - all child routes inherit this behavior
+2. **Automatic Detection**: The framework detects layouts with client navigation enabled
+3. **SPA Navigation**: Links within the same client-navigable group use `pushState` instead of full page reloads
+4. **Layout Persistence**: Layouts stay mounted during navigation, only page content changes
+5. **Cross-Group Navigation**: Navigating outside the client-navigable group triggers a full page reload
+
+**Navigation Behavior**
+
+- **Within Group**: `/dashboard` → `/dashboard/settings` = Client-side navigation (instant, no reload)
+- **Between Groups**: `/dashboard` → `/docs` = Full page reload (entering different group)
+- **Leaving Group**: `/dashboard/settings` → `/` = Full page reload (leaving client-navigable group)
+
+**Example: Dashboard with Multiple Pages**
+
+```typescript
+// app/dashboard/page.tsx
+export default function DashboardHome() {
+  return <div>Dashboard Home</div>;
+}
+
+// app/dashboard/settings/page.tsx
+export default function DashboardSettings() {
+  return <div>Settings Page</div>;
+}
+
+// app/dashboard/profile/page.tsx
+export default function DashboardProfile() {
+  return <div>Profile Page</div>;
+}
+```
+
+All routes under `/dashboard` will use client-side navigation. The navigation bar in the layout persists, and only the page content updates.
+
+**Link Component Behavior**
+
+The `Link` component automatically detects when both current and target routes are in the same client-navigable group:
+
+```typescript
+import { Link } from "@/components/link";
+
+// Within same client-navigable group → client-side navigation
+<Link href="/dashboard/settings">Settings</Link>
+
+// Different groups → full page reload
+<Link href="/docs">Documentation</Link>
+```
+
+**Browser Navigation**
+
+- **Back/Forward Buttons**: Work correctly with client-side navigation
+- **URL Updates**: Browser URL updates without page reload
+- **History State**: Properly managed for client-navigable routes
+
+**See It In Action**
+
+Check out the `/dashboard` route group in this project for a complete example with multiple pages demonstrating client-side navigation.
 
 ---
 

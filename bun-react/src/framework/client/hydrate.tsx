@@ -10,12 +10,82 @@
 import { type RouteConfig, routes } from "virtual:routes";
 import { type ReactNode, StrictMode, Suspense } from "react";
 import { hydrateRoot } from "react-dom/client";
-import { RouteParamsProvider, RouterProvider } from "./router";
+import {
+  ClientNavigationProvider,
+  RouteParamsProvider,
+  RouterProvider,
+} from "./router";
 
 // Validate routes are loaded
 if (!routes || Object.keys(routes).length === 0) {
   console.error("No routes found! Routes object:", routes);
 }
+
+// Regex patterns defined at top level for performance
+const TRAILING_SLASH_REGEX = /\/$/;
+const COLON_PREFIX = ":";
+const ASTERISK_PREFIX = "*";
+
+/**
+ * Match catch-all route pattern
+ */
+const matchCatchAll = (
+  patternParts: string[],
+  urlParts: string[]
+): { matched: boolean; params: Record<string, string> } => {
+  const params: Record<string, string> = {};
+  const lastPatternPart = patternParts.at(-1);
+  if (!lastPatternPart?.startsWith(ASTERISK_PREFIX)) {
+    return { matched: false, params: {} };
+  }
+
+  const catchAllParam = lastPatternPart.slice(1);
+  if (urlParts.length < patternParts.length - 1) {
+    return { matched: false, params: {} };
+  }
+
+  const matchedParts = patternParts.slice(0, -1);
+  for (let i = 0; i < matchedParts.length; i++) {
+    const patternPart = matchedParts[i];
+    const urlPart = urlParts[i];
+
+    if (patternPart?.startsWith(COLON_PREFIX)) {
+      params[patternPart.slice(1)] = urlPart || "";
+    } else if (patternPart !== urlPart) {
+      return { matched: false, params: {} };
+    }
+  }
+  // Catch-all captures the rest
+  params[catchAllParam] = urlParts.slice(matchedParts.length).join("/");
+  return { matched: true, params };
+};
+
+/**
+ * Match regular dynamic route pattern
+ */
+const matchRegular = (
+  patternParts: string[],
+  urlParts: string[]
+): { matched: boolean; params: Record<string, string> } => {
+  const params: Record<string, string> = {};
+
+  if (patternParts.length !== urlParts.length) {
+    return { matched: false, params: {} };
+  }
+
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i];
+    const urlPart = urlParts[i];
+
+    if (patternPart?.startsWith(COLON_PREFIX)) {
+      params[patternPart.slice(1)] = urlPart || "";
+    } else if (patternPart !== urlPart) {
+      return { matched: false, params: {} };
+    }
+  }
+
+  return { matched: true, params };
+};
 
 /**
  * Match a route pattern against a URL path and extract params
@@ -27,50 +97,16 @@ const matchPattern = (
   const patternParts = pattern.split("/").filter(Boolean);
   const urlParts = urlPath.split("/").filter(Boolean);
 
-  const params: Record<string, string> = {};
-
   // Handle catch-all routes
-  if (
-    patternParts.length > 0 &&
-    patternParts[patternParts.length - 1]?.startsWith("*")
-  ) {
-    const catchAllParam = patternParts[patternParts.length - 1]!.slice(1);
-    if (urlParts.length >= patternParts.length - 1) {
-      const matchedParts = patternParts.slice(0, -1);
-      for (let i = 0; i < matchedParts.length; i++) {
-        const patternPart = matchedParts[i]!;
-        const urlPart = urlParts[i];
-
-        if (patternPart.startsWith(":")) {
-          params[patternPart.slice(1)] = urlPart || "";
-        } else if (patternPart !== urlPart) {
-          return { matched: false, params: {} };
-        }
-      }
-      // Catch-all captures the rest
-      params[catchAllParam] = urlParts.slice(matchedParts.length).join("/");
-      return { matched: true, params };
+  if (patternParts.length > 0) {
+    const catchAllResult = matchCatchAll(patternParts, urlParts);
+    if (catchAllResult.matched) {
+      return catchAllResult;
     }
-    return { matched: false, params: {} };
   }
 
   // Regular dynamic route matching
-  if (patternParts.length !== urlParts.length) {
-    return { matched: false, params: {} };
-  }
-
-  for (let i = 0; i < patternParts.length; i++) {
-    const patternPart = patternParts[i]!;
-    const urlPart = urlParts[i];
-
-    if (patternPart.startsWith(":")) {
-      params[patternPart.slice(1)] = urlPart || "";
-    } else if (patternPart !== urlPart) {
-      return { matched: false, params: {} };
-    }
-  }
-
-  return { matched: true, params };
+  return matchRegular(patternParts, urlParts);
 };
 
 /**
@@ -82,17 +118,19 @@ const matchClientRoute = (
 ): { route: RouteConfig; params: Record<string, string> } | null => {
   // Normalize URL path
   const normalizedPath =
-    urlPath === "/" ? "/" : urlPath.replace(/\/$/, "") || "/";
+    urlPath === "/" ? "/" : urlPath.replace(TRAILING_SLASH_REGEX, "") || "/";
 
   // Exact match first
-  if (routeMap[normalizedPath]) {
-    return { route: routeMap[normalizedPath]!, params: {} };
+  const exactRoute = routeMap[normalizedPath];
+  if (exactRoute) {
+    return { route: exactRoute, params: {} };
   }
 
   // Try with trailing slash
   const withSlash = normalizedPath === "/" ? "/" : `${normalizedPath}/`;
-  if (routeMap[withSlash]) {
-    return { route: routeMap[withSlash]!, params: {} };
+  const routeWithSlash = routeMap[withSlash];
+  if (routeWithSlash) {
+    return { route: routeWithSlash, params: {} };
   }
 
   // Try dynamic route matching
@@ -169,10 +207,10 @@ const hydrate = () => {
     console.error(`Route not found: ${routePath}`);
     console.error("Available routes:", Object.keys(routes));
     // Fallback to home page if available
-    if (routes["/"]) {
+    const homeRoute = routes["/"];
+    if (homeRoute) {
       console.warn("Falling back to home page");
-      const fallbackMatch = { route: routes["/"]!, params: {} };
-      hydrateRoute(fallbackMatch.route, fallbackMatch.params, root);
+      hydrateRoute(homeRoute, {}, root);
       return;
     }
     return;
@@ -181,17 +219,11 @@ const hydrate = () => {
   // Check if route needs hydration (has client components)
   // For server component pages with async components, we can't hydrate because
   // async components can't run on the client. Skip hydration if no client components.
-  if (!needsHydration(matchResult.route)) {
-    // Only hydrate if server explicitly marked it as having client components
-    // This prevents trying to hydrate pure server component pages with async components
-    if (!hasClientComponents) {
-      console.log(
-        `[RSC] Route "${routePath}" is a pure server component - no hydration needed`
-      );
-      return;
-    }
-    // If server says it has client components but route doesn't, it might have client boundaries
-    // Try to hydrate, but React will handle any async component errors gracefully
+  if (!(needsHydration(matchResult.route) || hasClientComponents)) {
+    console.log(
+      `[RSC] Route "${routePath}" is a pure server component - no hydration needed`
+    );
+    return;
   }
 
   hydrateRoute(matchResult.route, matchResult.params, root);
@@ -256,14 +288,47 @@ const hydrateRoute = (
     }
   }
 
-  // Wrap with params provider and router
-  const content = (
-    <StrictMode>
-      <RouterProvider>
-        <RouteParamsProvider params={params}>{pageContent}</RouteParamsProvider>
-      </RouterProvider>
-    </StrictMode>
-  );
+  // Check if route is client-navigable
+  const isClientNavigable = route.clientNavigable === true;
+
+  // Get current path for client navigation
+  const currentPath =
+    typeof window !== "undefined" ? window.location.pathname : "/";
+
+  // Wrap with appropriate provider
+  let content: ReactNode;
+
+  if (isClientNavigable) {
+    // Use ClientNavigationProvider for SPA-style navigation
+    // It will manage route state and handle client-side navigation
+    // Pass the SSR content (pageContent) as children so it hydrates properly
+    content = (
+      <StrictMode>
+        <RouterProvider>
+          <ClientNavigationProvider
+            initialPageComponent={PageComponent}
+            initialParams={params}
+            initialPath={currentPath}
+            layoutComponent={LayoutComponent || null}
+            {...(ParentLayouts.length > 0 && { parentLayouts: ParentLayouts })}
+          >
+            {pageContent}
+          </ClientNavigationProvider>
+        </RouterProvider>
+      </StrictMode>
+    );
+  } else {
+    // Use regular RouterProvider for non-client-navigable routes
+    content = (
+      <StrictMode>
+        <RouterProvider>
+          <RouteParamsProvider params={params}>
+            {pageContent}
+          </RouteParamsProvider>
+        </RouterProvider>
+      </StrictMode>
+    );
+  }
 
   // Hydrate the existing HTML
   hydrateRoot(root, content);

@@ -31,6 +31,8 @@ export interface RouteConfig {
   parentLayoutTypes?: ComponentType[];
   isDynamic?: boolean;
   dynamicSegments?: string[];
+  /** Whether this route is in a client-navigable group (SPA-style navigation) */
+  clientNavigable?: boolean;
 }
 
 /**

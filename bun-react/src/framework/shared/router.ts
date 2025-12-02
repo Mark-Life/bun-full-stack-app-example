@@ -11,6 +11,7 @@ import {
   hasClientBoundariesSync,
   hasUseClientDirective,
 } from "~/framework/shared/rsc";
+import { hasClientNavigation } from "./layout";
 
 /**
  * Route file names that create routes
@@ -49,6 +50,8 @@ export interface RouteInfo {
   hasStaticParams: boolean;
   /** Has loader for build-time data fetching */
   hasLoader: boolean;
+  /** Whether this route is in a client-navigable group (SPA-style navigation) */
+  clientNavigable: boolean;
 }
 
 export interface RouteTree {
@@ -142,17 +145,18 @@ const filePathToRoute = (
 };
 
 /**
- * Layout info with component type
+ * Layout info with component type and client navigation flag
  */
 interface LayoutInfo {
   path: string;
   isClient: boolean;
+  hasClientNavigation: boolean;
 }
 
 /**
  * Find all layout files in the path hierarchy
  * Returns layouts in order from root to leaf (outermost to innermost)
- * Also determines if each layout is a client component
+ * Also determines if each layout is a client component and has client navigation
  */
 const findLayouts = (
   filePath: string,
@@ -161,6 +165,7 @@ const findLayouts = (
   layoutPath?: string;
   parentLayouts: string[];
   layoutTypes: ComponentType[];
+  clientNavigable: boolean;
 } => {
   const allLayouts: LayoutInfo[] = [];
   let currentDir = dirname(filePath);
@@ -171,6 +176,7 @@ const findLayouts = (
     allLayouts.push({
       path: rootLayout,
       isClient: hasUseClientDirective(rootLayout),
+      hasClientNavigation: hasClientNavigation(rootLayout),
     });
   }
 
@@ -192,6 +198,7 @@ const findLayouts = (
       allLayouts.push({
         path: layoutFile,
         isClient: hasUseClientDirective(layoutFile),
+        hasClientNavigation: hasClientNavigation(layoutFile),
       });
     }
     currentDir = dirname(currentDir);
@@ -202,10 +209,14 @@ const findLayouts = (
     l.isClient ? "client" : "server"
   );
 
+  // Check if any layout in the hierarchy has client navigation enabled
+  // If so, all child routes are client-navigable
+  const clientNavigable = allLayouts.some((l) => l.hasClientNavigation);
+
   // The last layout is the direct layout (closest to the route)
   // All others are parent layouts
   if (allLayouts.length === 0) {
-    return { parentLayouts: [], layoutTypes: [] };
+    return { parentLayouts: [], layoutTypes: [], clientNavigable: false };
   }
 
   if (allLayouts.length === 1) {
@@ -215,6 +226,7 @@ const findLayouts = (
         layoutPath: layout.path,
         parentLayouts: [],
         layoutTypes,
+        clientNavigable,
       };
     }
   }
@@ -223,9 +235,9 @@ const findLayouts = (
   const parentLayouts = allLayouts.slice(0, -1).map((l) => l.path);
 
   if (layoutPath) {
-    return { layoutPath, parentLayouts, layoutTypes };
+    return { layoutPath, parentLayouts, layoutTypes, clientNavigable };
   }
-  return { parentLayouts, layoutTypes };
+  return { parentLayouts, layoutTypes, clientNavigable };
 };
 
 /**
@@ -241,10 +253,8 @@ const processRouteFile = (
     dynamicSegments,
     isDynamic,
   } = filePathToRoute(fullPath, appDir);
-  const { layoutPath, parentLayouts, layoutTypes } = findLayouts(
-    fullPath,
-    appDir
-  );
+  const { layoutPath, parentLayouts, layoutTypes, clientNavigable } =
+    findLayouts(fullPath, appDir);
 
   // Check if the page itself is a client component
   const isClientComponent = hasUseClientDirective(fullPath);
@@ -268,6 +278,7 @@ const processRouteFile = (
     pageType,
     hasStaticParams,
     hasLoader: hasLoaderFn,
+    clientNavigable,
     ...(dynamicSegments.length > 0 && { dynamicSegments }),
   };
   if (layoutPath) {
@@ -369,6 +380,7 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
       pageType: routeInfo.pageType,
       hasStaticParams: routeInfo.hasStaticParams,
       hasLoader: routeInfo.hasLoader,
+      clientNavigable: routeInfo.clientNavigable,
     };
     if (routeInfo.layoutPath) {
       updatedRouteInfo.layoutPath = toImportPath(routeInfo.layoutPath, srcDir);
