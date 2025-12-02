@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function DashboardProfile() {
+export default function ClientNavProfilePage() {
   return (
     <div className="w-full space-y-6">
       <div>

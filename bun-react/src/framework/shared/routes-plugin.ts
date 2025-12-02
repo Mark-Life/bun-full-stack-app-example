@@ -125,7 +125,10 @@ const collectLayouts = (
 };
 
 /**
- * Generate import statements for pages and client layouts
+ * Generate import statements for pages and layouts
+ * Note: We import ALL layouts (server and client) so they can be used
+ * during hydration to match the SSR DOM structure.
+ * Server layouts are safe to run on client - they're just wrapper components.
  */
 const generateImports = (
   routes: Map<string, import("./router").RouteInfo>,
@@ -142,14 +145,13 @@ const generateImports = (
     );
   }
 
-  // Import client layouts only
+  // Import ALL layouts (server and client)
+  // Server layouts are just wrapper components and can run on client
   for (const [layoutPath, layoutInfo] of layoutMap.entries()) {
-    if (layoutInfo.type === "client") {
-      const layoutImportPath = toImportPath(layoutPath);
-      imports.push(
-        `const ${layoutInfo.name} = lazy(() => import("${layoutImportPath}"));`
-      );
-    }
+    const layoutImportPath = toImportPath(layoutPath);
+    imports.push(
+      `const ${layoutInfo.name} = lazy(() => import("${layoutImportPath}"));`
+    );
   }
 
   return imports;
@@ -187,24 +189,20 @@ const generateRouteConfig = (
     `componentType: "${routeInfo.isClientComponent ? "client" : "server"}"`
   );
 
-  // Layout reference (only for client layouts)
+  // Layout reference (include ALL layouts for hydration)
+  // Server layouts are safe to run on client during hydration
   if (layoutInfo) {
-    if (layoutInfo.type === "client") {
-      routeConfig.push(`layout: ${layoutInfo.name}`);
-    } else {
-      routeConfig.push("layout: null");
-    }
+    routeConfig.push(`layout: ${layoutInfo.name}`);
     routeConfig.push(`layoutType: "${layoutInfo.type}"`);
   }
 
-  // Parent layouts (only client ones)
+  // Parent layouts (include ALL layouts for hydration)
   if (parentLayoutInfo.length > 0) {
-    const clientParentLayouts = parentLayoutInfo
+    const allParentLayouts = parentLayoutInfo
       .filter(
         (info): info is NonNullable<typeof info> =>
           info !== null && info !== undefined
       )
-      .filter((info) => info.type === "client")
       .map((info) => info.name);
 
     const parentLayoutTypes = parentLayoutInfo
@@ -214,11 +212,7 @@ const generateRouteConfig = (
       )
       .map((info) => `"${info.type}"`);
 
-    if (clientParentLayouts.length > 0) {
-      routeConfig.push(`parentLayouts: [${clientParentLayouts.join(", ")}]`);
-    } else {
-      routeConfig.push("parentLayouts: []");
-    }
+    routeConfig.push(`parentLayouts: [${allParentLayouts.join(", ")}]`);
     routeConfig.push(`parentLayoutTypes: [${parentLayoutTypes.join(", ")}]`);
   }
 
@@ -261,11 +255,11 @@ export interface RouteConfig {
   component: React.LazyExoticComponent<React.ComponentType<any>>;
   /** Whether this is a server or client component */
   componentType: ComponentType;
-  /** Lazy layout for client layouts, null for server layouts */
-  layout?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>> | null;
+  /** Lazy layout component (server or client) */
+  layout?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>>;
   /** Layout component type */
   layoutType?: ComponentType;
-  /** Client parent layouts (lazy loaded) */
+  /** All parent layouts (lazy loaded) */
   parentLayouts?: React.LazyExoticComponent<React.ComponentType<{ children: React.ReactNode }>>[];
   /** Types of parent layouts */
   parentLayoutTypes?: ComponentType[];

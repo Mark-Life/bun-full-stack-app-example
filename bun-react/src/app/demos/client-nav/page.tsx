@@ -7,16 +7,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function DashboardHome() {
+export default function ClientNavDemoPage() {
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-8">
       <div>
-        <h2 className="mb-2 font-bold text-3xl">Dashboard Home</h2>
-        <p className="text-muted-foreground">
-          This is a client-navigable route group. Navigation between dashboard
-          pages uses SPA-style client-side navigation (no page reload).
+        <h1 className="mb-4 font-bold text-4xl">Client-Side Navigation</h1>
+        <p className="text-lg text-muted-foreground">
+          This demo showcases SPA-style client-side navigation. Navigation
+          between pages in this route group uses instant transitions without
+          page reloads.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>How It Works</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground">
+            This route group uses client-side navigation enabled via{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              defineLayout({"{ clientNavigation: true }"})
+            </code>
+            . All routes under{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              /demos/client-nav
+            </code>{" "}
+            will navigate without full page reloads.
+          </p>
+          <p className="text-muted-foreground">
+            Try navigating to other pages and notice:
+          </p>
+          <ul className="list-disc space-y-1 pl-6 text-muted-foreground">
+            <li>No page reload (instant navigation)</li>
+            <li>Layout persists (navigation bar stays)</li>
+            <li>Browser back/forward buttons work</li>
+            <li>URL updates correctly</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
@@ -69,19 +98,19 @@ export default function DashboardHome() {
             <div className="flex flex-col gap-2">
               <Link
                 className="text-primary hover:underline"
-                href="/dashboard/settings"
+                href="/demos/client-nav/settings"
               >
                 → Go to Settings
               </Link>
               <Link
                 className="text-primary hover:underline"
-                href="/dashboard/profile"
+                href="/demos/client-nav/profile"
               >
                 → Go to Profile
               </Link>
               <Link
                 className="text-primary hover:underline"
-                href="/dashboard/analytics"
+                href="/demos/client-nav/analytics"
               >
                 → Go to Analytics
               </Link>
@@ -89,34 +118,6 @@ export default function DashboardHome() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>How It Works</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-4 text-muted-foreground text-sm">
-            This dashboard uses client-side navigation enabled via{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-              defineLayout({"{ clientNavigation: true }"})
-            </code>
-            . All routes under{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-              /dashboard
-            </code>{" "}
-            will navigate without full page reloads.
-          </p>
-          <p className="text-muted-foreground text-sm">
-            Try navigating to other dashboard pages and notice:
-          </p>
-          <ul className="mt-2 list-disc space-y-1 pl-6 text-muted-foreground text-sm">
-            <li>No page reload (instant navigation)</li>
-            <li>Layout persists (navigation bar stays)</li>
-            <li>Browser back/forward buttons work</li>
-            <li>URL updates correctly</li>
-          </ul>
-        </CardContent>
-      </Card>
     </div>
   );
 }

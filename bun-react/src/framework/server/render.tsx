@@ -172,7 +172,7 @@ const buildComponentTree = (
     component: React.ComponentType<Record<string, unknown>>;
     props?: Record<string, unknown>;
   }>,
-  options: { routePath: string; needsHydration: boolean }
+  options: { routePath: string; needsHydration: boolean; pageData?: unknown }
 ): React.ReactElement => {
   let component: React.ReactElement = React.createElement(
     PageComponent,
@@ -187,6 +187,9 @@ const buildComponentTree = (
               ...layout.props,
               routePath: options.routePath,
               hasClientComponents: options.needsHydration,
+              ...(options.pageData !== undefined && {
+                pageData: options.pageData,
+              }),
             }
           : layout.props || {};
       component = React.createElement(layout.component, props, component);
@@ -359,6 +362,7 @@ export const renderRouteToString = async (
     const component = buildComponentTree(PageComponent, pageProps, layouts, {
       routePath: routeInfo.path,
       needsHydration,
+      pageData: data !== undefined ? data : undefined,
     });
 
     // Render to string
@@ -435,6 +439,7 @@ export const renderRoute = async (
     const component = buildComponentTree(PageComponent, pageProps, layouts, {
       routePath: routeInfo.path,
       needsHydration,
+      pageData: pageData !== undefined ? pageData : undefined,
     });
 
     // Create AbortController to signal React when the stream is cancelled

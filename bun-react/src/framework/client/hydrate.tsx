@@ -8,7 +8,7 @@
  */
 
 import { type RouteConfig, routes } from "virtual:routes";
-import { type ReactNode, StrictMode, Suspense } from "react";
+import { type ReactNode, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import {
   ClientNavigationProvider,
@@ -152,6 +152,7 @@ const matchClientRoute = (
 const getRouteData = (): {
   routePath: string;
   hasClientComponents: boolean;
+  pageData?: unknown;
 } => {
   const script = document.getElementById("__ROUTE_DATA__");
   if (script?.textContent) {
@@ -159,6 +160,7 @@ const getRouteData = (): {
       return JSON.parse(script.textContent) as {
         routePath: string;
         hasClientComponents: boolean;
+        pageData?: unknown;
       };
     } catch {
       // Ignore parse errors
@@ -200,7 +202,7 @@ const hydrate = () => {
     return;
   }
 
-  const { routePath, hasClientComponents } = getRouteData();
+  const { routePath, hasClientComponents, pageData } = getRouteData();
   const matchResult = matchClientRoute(routePath, routes);
 
   if (!matchResult) {
@@ -210,7 +212,7 @@ const hydrate = () => {
     const homeRoute = routes["/"];
     if (homeRoute) {
       console.warn("Falling back to home page");
-      hydrateRoute(homeRoute, {}, root);
+      hydrateRoute(homeRoute, {}, root, pageData);
       return;
     }
     return;
@@ -226,7 +228,7 @@ const hydrate = () => {
     return;
   }
 
-  hydrateRoute(matchResult.route, matchResult.params, root);
+  hydrateRoute(matchResult.route, matchResult.params, root, pageData);
 };
 
 /**
@@ -244,7 +246,8 @@ const hydrate = () => {
 const hydrateRoute = (
   route: RouteConfig,
   params: Record<string, string>,
-  root: HTMLElement
+  root: HTMLElement,
+  pageData?: unknown
 ) => {
   const PageComponent = route.component;
   const LayoutComponent = route.layout;
@@ -262,29 +265,27 @@ const hydrateRoute = (
   // since it wraps RootShell which renders <html> - already in the DOM
   // For server component pages, don't wrap in Suspense - Suspense boundaries
   // are already in the component tree and wrapping causes hydration mismatches
-  let pageContent: ReactNode = <PageComponent />;
+  // For server component pages, pass the same props (including data) that were used during SSR
+  // so React can properly match the existing HTML
+  const pageProps: Record<string, unknown> = { params };
+  if (pageData !== undefined) {
+    pageProps["data"] = pageData;
+  }
+  let pageContent: ReactNode = <PageComponent {...pageProps} />;
 
-  // Apply direct layout if present and is a client component
-  if (LayoutComponent && route.layoutType === "client") {
-    pageContent = (
-      <Suspense fallback={null}>
-        <LayoutComponent>{pageContent}</LayoutComponent>
-      </Suspense>
-    );
+  // Apply direct layout if present
+  // Include ALL layouts (server and client) so the DOM structure matches SSR
+  // Server layouts are just wrapper components - they can run on client
+  if (LayoutComponent) {
+    pageContent = <LayoutComponent>{pageContent}</LayoutComponent>;
   }
 
-  // Apply parent layouts (outermost first) - only client layouts
-  const parentLayoutTypes = route.parentLayoutTypes || [];
+  // Apply parent layouts (outermost first) - include all layouts
   for (let i = ParentLayouts.length - 1; i >= 0; i--) {
     const ParentLayout = ParentLayouts[i];
-    const layoutType = parentLayoutTypes[i];
 
-    if (ParentLayout && layoutType === "client") {
-      pageContent = (
-        <Suspense fallback={null}>
-          <ParentLayout>{pageContent}</ParentLayout>
-        </Suspense>
-      );
+    if (ParentLayout) {
+      pageContent = <ParentLayout>{pageContent}</ParentLayout>;
     }
   }
 

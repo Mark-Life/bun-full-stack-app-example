@@ -10,7 +10,7 @@ import { definePage } from "~/framework/shared/page";
 import { getAllProductIds, getProductById } from "~/lib/products";
 
 /**
- * Product detail page with ISR
+ * ISR Demo - Product detail page
  * Revalidates every hour
  */
 export default definePage({
@@ -47,33 +47,26 @@ export default definePage({
 
     if (!product) {
       return (
-        <div className="container mx-auto p-8">
-          <Card>
-            <CardContent className="py-8 text-center">
-              <p className="text-muted-foreground">Product not found</p>
-              <Link
-                className="mt-4 text-primary hover:underline"
-                href="/products"
-              >
-                ← Back to Products
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">Product not found</p>
+            <Link
+              className="mt-4 text-primary hover:underline"
+              href="/demos/isr"
+            >
+              ← Back to Products
+            </Link>
+          </CardContent>
+        </Card>
       );
     }
 
     return (
-      <div className="container mx-auto p-8">
-        <div className="mb-4 rounded-lg bg-muted p-4 text-muted-foreground text-sm">
-          <p className="font-semibold">ISR Demo:</p>
-          <p>
-            This page is statically generated with ISR. It revalidates every
-            hour. Check the{" "}
-            <code className="rounded bg-accent px-1 text-accent-foreground">
-              X-Cache
-            </code>{" "}
-            header in DevTools to see cache status (HIT/STALE/MISS).
+      <div className="space-y-8">
+        <div>
+          <h1 className="mb-4 font-bold text-4xl">{product.name}</h1>
+          <p className="text-muted-foreground">
+            Product detail page with ISR (revalidates every hour)
           </p>
         </div>
 
@@ -87,7 +80,7 @@ export default definePage({
               <p className="mb-2 font-semibold text-muted-foreground text-sm">
                 Route Pattern:
               </p>
-              <code className="text-sm">/products/[id]</code>
+              <code className="text-sm">/demos/isr/[id]</code>
             </div>
 
             <div className="border-t pt-4">
@@ -114,31 +107,7 @@ export default definePage({
             </div>
 
             <div className="border-t pt-4">
-              <p className="mb-2 font-semibold text-sm">Other Products:</p>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
-                  href="/products/1"
-                >
-                  Product 1
-                </Link>
-                <Link
-                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
-                  href="/products/2"
-                >
-                  Product 2
-                </Link>
-                <Link
-                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
-                  href="/products/3"
-                >
-                  Product 3
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t pt-4">
-              <Link className="text-primary hover:underline" href="/products">
+              <Link className="text-primary hover:underline" href="/demos/isr">
                 ← Back to Products
               </Link>
             </div>

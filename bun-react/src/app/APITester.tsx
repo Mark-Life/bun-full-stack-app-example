@@ -79,9 +79,7 @@ export const APITester = clientComponent(() => {
           placeholder="/api/hello"
           type="text"
         />
-        <Button type="submit" variant="secondary">
-          Send
-        </Button>
+        <Button type="submit">Send</Button>
       </form>
       <Label className="sr-only" htmlFor="response">
         Response

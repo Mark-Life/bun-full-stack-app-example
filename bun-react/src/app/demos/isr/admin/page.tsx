@@ -32,7 +32,7 @@ import { clientComponent } from "~/framework/shared/rsc";
 import type { Product } from "~/lib/products";
 
 /**
- * Admin page to manage products and trigger ISR revalidation
+ * ISR Demo - Admin page to manage products and trigger ISR revalidation
  */
 const AdminProductsPage = clientComponent(() => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -54,16 +54,11 @@ const AdminProductsPage = clientComponent(() => {
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      console.log("[Admin] Loading products from /api/products/list...");
-
-      // Add timeout to prevent infinite hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.error("[Admin] Request timeout after 5 seconds");
         controller.abort();
       }, 5000);
 
-      // Use direct fetch with timeout
       const response = await fetch("/api/products/list", {
         signal: controller.signal,
         headers: {
@@ -73,40 +68,24 @@ const AdminProductsPage = clientComponent(() => {
 
       clearTimeout(timeoutId);
 
-      console.log(
-        "[Admin] Response received:",
-        response.status,
-        response.statusText
-      );
-
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[Admin] API error:", response.status, errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const productsData = (await response.json()) as Product[];
-      console.log("[Admin] Products loaded:", productsData);
-
       if (Array.isArray(productsData)) {
         setProducts(productsData);
       } else {
-        console.error("[Admin] Invalid products data format:", productsData);
         setProducts([]);
       }
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        console.error("[Admin] Request aborted due to timeout");
-      } else {
-        console.error("[Admin] Failed to load products:", error);
-      }
+      console.error("[Admin] Failed to load products:", error);
       setProducts([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Load products
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
@@ -144,16 +123,14 @@ const AdminProductsPage = clientComponent(() => {
       })) as Product | null;
 
       if (updated) {
-        // Update local state
         const updatedProducts = products.map((p) =>
           p.id === editing.id ? updated : p
         );
         setProducts(updatedProducts);
         setEditing(null);
 
-        // Trigger revalidation
-        await handleRevalidate(`/products/${editing.id}`);
-        await handleRevalidate("/products");
+        await handleRevalidate(`/demos/isr/${editing.id}`);
+        await handleRevalidate("/demos/isr");
       }
     } catch (error) {
       console.error("Failed to update product:", error);
@@ -168,8 +145,6 @@ const AdminProductsPage = clientComponent(() => {
   const handleRevalidate = async (path: string) => {
     try {
       setRevalidating(path);
-      // In production, set REVALIDATE_SECRET environment variable
-      // For demo purposes, using a default secret
       await (
         apiClient.revalidate as (input: {
           path: string;
@@ -177,7 +152,7 @@ const AdminProductsPage = clientComponent(() => {
         }) => Promise<unknown>
       )({
         path,
-        secret: "demo-secret", // Replace with actual secret in production
+        secret: "demo-secret",
       });
       setDialogMessage({
         title: "Revalidation Successful",
@@ -198,43 +173,48 @@ const AdminProductsPage = clientComponent(() => {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-8">
+      <div className="space-y-8">
         <p className="text-muted-foreground">Loading products...</p>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="mb-2 font-bold text-4xl">Product Management</h1>
           <p className="text-muted-foreground">
-            Update products and trigger ISR revalidation
+            Update products and trigger on-demand ISR revalidation
           </p>
         </div>
         <Link
           className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
-          href="/products"
+          href="/demos/isr"
         >
           View Products
         </Link>
       </div>
 
-      <div className="mb-6 rounded-lg bg-muted p-4 text-muted-foreground text-sm">
-        <p className="font-semibold">ISR Revalidation Demo:</p>
-        <p>
-          When you update a product, click "Revalidate" to trigger on-demand
-          ISR. This will regenerate the cached page immediately. Set{" "}
-          <code className="rounded bg-accent px-1 text-accent-foreground">
-            REVALIDATE_SECRET
-          </code>{" "}
-          environment variable for production use.
-        </p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>On-Demand Revalidation</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4 text-muted-foreground text-sm">
+            When you update a product, click &quot;Revalidate&quot; to trigger
+            on-demand ISR. This will regenerate the cached page immediately.
+            Check the{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              X-Cache
+            </code>{" "}
+            header after revalidation to see the fresh content.
+          </p>
+        </CardContent>
+      </Card>
 
       {editing ? (
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle>Edit Product: {editing.name}</CardTitle>
             <CardDescription>Update product details</CardDescription>
@@ -328,11 +308,11 @@ const AdminProductsPage = clientComponent(() => {
                     Edit
                   </Button>
                   <Button
-                    disabled={revalidating === `/products/${product.id}`}
-                    onClick={() => handleRevalidate(`/products/${product.id}`)}
+                    disabled={revalidating === `/demos/isr/${product.id}`}
+                    onClick={() => handleRevalidate(`/demos/isr/${product.id}`)}
                     size="sm"
                   >
-                    {revalidating === `/products/${product.id}`
+                    {revalidating === `/demos/isr/${product.id}`
                       ? "Revalidating..."
                       : "Revalidate"}
                   </Button>
@@ -360,7 +340,7 @@ const AdminProductsPage = clientComponent(() => {
                 </div>
                 <Link
                   className="text-primary hover:underline"
-                  href={`/products/${product.id}`}
+                  href={`/demos/isr/${product.id}`}
                 >
                   View →
                 </Link>
@@ -370,21 +350,15 @@ const AdminProductsPage = clientComponent(() => {
         ))}
       </div>
 
-      <div className="mt-6 flex gap-2">
+      <div className="flex gap-2">
         <Button
-          disabled={revalidating === "/products"}
-          onClick={() => handleRevalidate("/products")}
+          disabled={revalidating === "/demos/isr"}
+          onClick={() => handleRevalidate("/demos/isr")}
         >
-          {revalidating === "/products"
+          {revalidating === "/demos/isr"
             ? "Revalidating..."
             : "Revalidate Products List"}
         </Button>
-      </div>
-
-      <div className="mt-8">
-        <Link className="text-primary hover:underline" href="/">
-          ← Back to Home
-        </Link>
       </div>
 
       <AlertDialog onOpenChange={setDialogOpen} open={dialogOpen}>
