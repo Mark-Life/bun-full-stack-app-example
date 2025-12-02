@@ -31,8 +31,8 @@ bun start    # production
 
 - [x] **React Server Components (RSC)** - Server-first model with client boundaries
 
-  - Default: Server components (no directive)
-  - `"use client"` directive marks client component boundaries
+  - Default: Server components (no wrapper)
+  - `clientComponent()` wrapper marks client component boundaries (type-safe)
   - Server components can contain client components
   - Automatic client boundary detection for proper hydration
 
@@ -56,7 +56,7 @@ bun start    # production
 **Default model**: React Server Components (RSC).
 
 - Server components (default): Render on server only
-- Client components (`"use client"`): Render on server (SSR) + hydrate on client
+- Client components (`clientComponent()` wrapper): Render on server (SSR) + hydrate on client
 
 ```
 Request → Match route → Render (server + client components)
@@ -66,8 +66,12 @@ Request → Match route → Render (server + client components)
 
 ### RSC Flow
 
-1. **No directive** = Server component (render once on server)
-2. **`"use client"`** = Client component boundary (hydrates for interactivity)
+1. **No wrapper** = Server component (render once on server)
+2. **`clientComponent()` wrapper** = Client component boundary (hydrates for interactivity)
+   ```tsx
+   import { clientComponent } from "~/framework/shared/rsc";
+   export const MyComponent = clientComponent((props) => { ... });
+   ```
 3. Server components can import client components (client boundaries)
 4. **Async Server Components** = Can use Suspense for progressive streaming
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { type FormEvent, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +10,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { clientComponent } from "~/framework/shared/rsc";
 
-export function APITester() {
+export const APITester = clientComponent(() => {
   const responseInputRef = useRef<HTMLTextAreaElement>(null);
 
   const testEndpoint = async (e: FormEvent<HTMLFormElement>) => {
@@ -75,4 +74,4 @@ export function APITester() {
       />
     </div>
   );
-}
+});
