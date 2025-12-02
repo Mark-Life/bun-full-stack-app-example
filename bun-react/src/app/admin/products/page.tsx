@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@/components/link";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,6 +44,11 @@ const AdminProductsPage = clientComponent(() => {
     description: "",
     price: "",
     status: "live" as "draft" | "live",
+  });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMessage, setDialogMessage] = useState({
+    title: "",
+    description: "",
   });
 
   const loadProducts = useCallback(async () => {
@@ -143,7 +157,11 @@ const AdminProductsPage = clientComponent(() => {
       }
     } catch (error) {
       console.error("Failed to update product:", error);
-      alert("Failed to update product. Check console for details.");
+      setDialogMessage({
+        title: "Update Failed",
+        description: "Failed to update product. Check console for details.",
+      });
+      setDialogOpen(true);
     }
   };
 
@@ -161,10 +179,18 @@ const AdminProductsPage = clientComponent(() => {
         path,
         secret: "demo-secret", // Replace with actual secret in production
       });
-      alert(`Revalidated: ${path}`);
+      setDialogMessage({
+        title: "Revalidation Successful",
+        description: `Successfully revalidated: ${path}`,
+      });
+      setDialogOpen(true);
     } catch (error) {
       console.error("Failed to revalidate:", error);
-      alert(`Failed to revalidate ${path}. Check console for details.`);
+      setDialogMessage({
+        title: "Revalidation Failed",
+        description: `Failed to revalidate ${path}. Check console for details.`,
+      });
+      setDialogOpen(true);
     } finally {
       setRevalidating(null);
     }
@@ -188,19 +214,19 @@ const AdminProductsPage = clientComponent(() => {
           </p>
         </div>
         <Link
-          className="rounded bg-gray-600 px-4 py-2 text-white hover:bg-gray-700"
+          className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
           href="/products"
         >
           View Products
         </Link>
       </div>
 
-      <div className="mb-6 rounded-lg bg-yellow-50 p-4 text-sm text-yellow-900 dark:bg-yellow-900/20 dark:text-yellow-200">
+      <div className="mb-6 rounded-lg bg-muted p-4 text-muted-foreground text-sm">
         <p className="font-semibold">ISR Revalidation Demo:</p>
         <p>
           When you update a product, click "Revalidate" to trigger on-demand
           ISR. This will regenerate the cached page immediately. Set{" "}
-          <code className="rounded bg-yellow-100 px-1 dark:bg-yellow-800">
+          <code className="rounded bg-accent px-1 text-accent-foreground">
             REVALIDATE_SECRET
           </code>{" "}
           environment variable for production use.
@@ -324,8 +350,8 @@ const AdminProductsPage = clientComponent(() => {
                     <span
                       className={
                         product.status === "live"
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-gray-600 dark:text-gray-400"
+                          ? "text-primary"
+                          : "text-muted-foreground"
                       }
                     >
                       {product.status}
@@ -333,7 +359,7 @@ const AdminProductsPage = clientComponent(() => {
                   </p>
                 </div>
                 <Link
-                  className="text-blue-600 hover:underline"
+                  className="text-primary hover:underline"
                   href={`/products/${product.id}`}
                 >
                   View →
@@ -356,10 +382,26 @@ const AdminProductsPage = clientComponent(() => {
       </div>
 
       <div className="mt-8">
-        <Link className="text-blue-600 hover:underline" href="/">
+        <Link className="text-primary hover:underline" href="/">
           ← Back to Home
         </Link>
       </div>
+
+      <AlertDialog onOpenChange={setDialogOpen} open={dialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{dialogMessage.title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {dialogMessage.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setDialogOpen(false)}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 });

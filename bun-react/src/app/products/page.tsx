@@ -33,19 +33,19 @@ export default definePage({
             </p>
           </div>
           <Link
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
             href="/admin/products"
           >
             Manage Products
           </Link>
         </div>
 
-        <div className="mb-4 rounded-lg bg-blue-50 p-4 text-blue-900 text-sm dark:bg-blue-900/20 dark:text-blue-200">
+        <div className="mb-4 rounded-lg bg-muted p-4 text-muted-foreground text-sm">
           <p className="font-semibold">ISR Demo:</p>
           <p>
             This page is statically generated with ISR. It revalidates every 60
             seconds. Check the{" "}
-            <code className="rounded bg-blue-100 px-1 dark:bg-blue-800">
+            <code className="rounded bg-accent px-1 text-accent-foreground">
               X-Cache
             </code>{" "}
             header in DevTools to see cache status (HIT/STALE/MISS).
@@ -79,7 +79,7 @@ export default definePage({
         )}
 
         <div className="mt-8">
-          <Link className="text-blue-600 hover:underline" href="/">
+          <Link className="text-primary hover:underline" href="/">
             ← Back to Home
           </Link>
         </div>

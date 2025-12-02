@@ -52,7 +52,7 @@ export default definePage({
             <CardContent className="py-8 text-center">
               <p className="text-muted-foreground">Product not found</p>
               <Link
-                className="mt-4 text-blue-600 hover:underline"
+                className="mt-4 text-primary hover:underline"
                 href="/products"
               >
                 ← Back to Products
@@ -65,12 +65,12 @@ export default definePage({
 
     return (
       <div className="container mx-auto p-8">
-        <div className="mb-4 rounded-lg bg-blue-50 p-4 text-blue-900 text-sm dark:bg-blue-900/20 dark:text-blue-200">
+        <div className="mb-4 rounded-lg bg-muted p-4 text-muted-foreground text-sm">
           <p className="font-semibold">ISR Demo:</p>
           <p>
             This page is statically generated with ISR. It revalidates every
             hour. Check the{" "}
-            <code className="rounded bg-blue-100 px-1 dark:bg-blue-800">
+            <code className="rounded bg-accent px-1 text-accent-foreground">
               X-Cache
             </code>{" "}
             header in DevTools to see cache status (HIT/STALE/MISS).
@@ -106,7 +106,7 @@ export default definePage({
                 </div>
                 <div>
                   <span className="font-semibold">Status:</span>{" "}
-                  <span className="rounded bg-green-100 px-2 py-1 text-green-800 text-xs dark:bg-green-900/30 dark:text-green-200">
+                  <span className="rounded bg-muted px-2 py-1 text-muted-foreground text-xs">
                     {product.status}
                   </span>
                 </div>
@@ -117,19 +117,19 @@ export default definePage({
               <p className="mb-2 font-semibold text-sm">Other Products:</p>
               <div className="flex flex-wrap gap-2">
                 <Link
-                  className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
                   href="/products/1"
                 >
                   Product 1
                 </Link>
                 <Link
-                  className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
                   href="/products/2"
                 >
                   Product 2
                 </Link>
                 <Link
-                  className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+                  className="rounded bg-primary px-3 py-1 text-primary-foreground text-sm hover:bg-primary/90"
                   href="/products/3"
                 >
                   Product 3
@@ -138,7 +138,7 @@ export default definePage({
             </div>
 
             <div className="border-t pt-4">
-              <Link className="text-blue-600 hover:underline" href="/products">
+              <Link className="text-primary hover:underline" href="/products">
                 ← Back to Products
               </Link>
             </div>
