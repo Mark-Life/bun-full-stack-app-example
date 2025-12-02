@@ -16,12 +16,16 @@ export default function HomePage() {
         <img
           alt="Bun Logo"
           className="h-36 scale-120 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa]"
+          height={144}
           src="/logo.svg"
+          width={144}
         />
         <img
           alt="React Logo"
-          className="h-36 p-6 transition-all duration-300 [animation:spin_20s_linear_infinite] hover:drop-shadow-[0_0_2em_#61dafbaa]"
+          className="h-36 animate-[spin_20s_linear_infinite] p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa]"
+          height={144}
           src="/react.svg"
+          width={144}
         />
       </div>
       <Card>

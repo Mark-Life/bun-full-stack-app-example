@@ -4,6 +4,7 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { discoverPublicAssets } from "./src/framework/server/public";
 import { renderRouteToString } from "./src/framework/server/render";
+import { generateRouteTypes } from "./src/framework/shared/generate-route-types";
 import { getPageConfig, hasPageConfig } from "./src/framework/shared/page";
 import { discoverRoutes, type RouteInfo } from "./src/framework/shared/router";
 import { routesPlugin } from "./src/framework/shared/routes-plugin";
@@ -210,6 +211,11 @@ console.log("\n🚀 Starting build process...\n");
 
 const cliConfig = parseArgs();
 const outdir = cliConfig.outdir || path.join(process.cwd(), "dist");
+
+// Generate route types for type-safe Link component
+console.log("📝 Generating route types...");
+await generateRouteTypes();
+console.log();
 
 if (existsSync(outdir)) {
   console.log(`🗑️ Cleaning previous build at ${outdir}`);
@@ -454,7 +460,7 @@ const renderSinglePage = async (
       : routePath;
 
   const pageData = await loadPageData(routeInfo, PageComponent);
-  const html = await renderRouteToString(routeInfo, params, pageData);
+  const html = await renderRouteToString(routeInfo, pageData, params);
 
   const htmlPath =
     concretePath === "/"

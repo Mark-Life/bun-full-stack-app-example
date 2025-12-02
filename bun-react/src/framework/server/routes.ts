@@ -6,15 +6,24 @@ import {
 import { renderRoute } from "./render";
 
 /**
- * Discover routes on startup
+ * Mutable route tree that can be updated during development
  */
-const routeTree = discoverRoutes("./src/app");
+let routeTree = discoverRoutes("./src/app");
 console.log(`📁 Discovered ${routeTree.routes.size} routes`);
 
 /**
  * Get the route tree
  */
 export const getRouteTree = (): RouteTree => routeTree;
+
+/**
+ * Rediscover routes (useful for dev mode hot reloading)
+ */
+export const rediscoverRoutes = (): RouteTree => {
+  routeTree = discoverRoutes("./src/app");
+  console.log(`🔄 Rediscovered ${routeTree.routes.size} routes`);
+  return routeTree;
+};
 
 /**
  * Build route handlers dynamically

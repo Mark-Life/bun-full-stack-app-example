@@ -18,6 +18,76 @@ const resolveImportPath = (importPath: string): string => {
 };
 
 /**
+ * HMR client script (dev mode only)
+ */
+const getHmrScript = (): string => {
+  if (process.env.NODE_ENV === "production") {
+    return "";
+  }
+  return `
+    <script>
+      (function() {
+        if (typeof window === 'undefined') return;
+        
+        let ws;
+        let reconnectTimeout;
+        
+        const connectHMR = () => {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          ws = new WebSocket(protocol + '//' + window.location.host + '/hmr');
+          
+          ws.onopen = () => {
+            console.log('[HMR] Connected');
+            if (reconnectTimeout) {
+              clearTimeout(reconnectTimeout);
+              reconnectTimeout = null;
+            }
+          };
+          
+          ws.onmessage = (event) => {
+            try {
+              const message = JSON.parse(event.data);
+              if (message.type === 'hmr-update') {
+                console.log('[HMR] File changed:', message.file);
+                
+                // Reload CSS files
+                if (message.file.endsWith('.css')) {
+                  const links = document.querySelectorAll('link[rel="stylesheet"]');
+                  links.forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href) {
+                      const newHref = href.split('?')[0] + '?t=' + Date.now();
+                      link.setAttribute('href', newHref);
+                    }
+                  });
+                } else {
+                  // Reload page for JS/TS/HTML/route changes
+                  window.location.reload();
+                }
+              }
+            } catch (e) {
+              // Ignore non-JSON messages
+            }
+          };
+          
+          ws.onerror = (error) => {
+            console.error('[HMR] WebSocket error:', error);
+          };
+          
+          ws.onclose = () => {
+            console.log('[HMR] Disconnected, reconnecting...');
+            reconnectTimeout = setTimeout(() => {
+              connectHMR();
+            }, 1000);
+          };
+        };
+        
+        connectHMR();
+      })();
+    </script>`;
+};
+
+/**
  * Check if a route has any client components (page, layouts, or imported)
  *
  * Returns true if:
@@ -93,12 +163,141 @@ const loadLayouts = async (
 };
 
 /**
+ * Build component tree with layouts
+ */
+const buildComponentTree = (
+  PageComponent: React.ComponentType<Record<string, unknown>>,
+  pageProps: Record<string, unknown>,
+  layouts: Array<{
+    component: React.ComponentType<Record<string, unknown>>;
+    props?: Record<string, unknown>;
+  }>,
+  options: { routePath: string; needsHydration: boolean }
+): React.ReactElement => {
+  let component: React.ReactElement = React.createElement(
+    PageComponent,
+    pageProps
+  );
+  for (let i = layouts.length - 1; i >= 0; i--) {
+    const layout = layouts[i];
+    if (layout) {
+      const props =
+        i === 0
+          ? {
+              ...layout.props,
+              routePath: options.routePath,
+              hasClientComponents: options.needsHydration,
+            }
+          : layout.props || {};
+      component = React.createElement(layout.component, props, component);
+    }
+  }
+  return component;
+};
+
+/**
+ * Create stream error handler
+ */
+const createStreamErrorHandler = (): ((error: unknown) => void) => {
+  return (error: unknown) => {
+    // Ignore abort errors - these are normal when clients disconnect
+    if (
+      error instanceof Error &&
+      (error.message.includes("aborted") ||
+        error.message.includes("abort") ||
+        error.name === "AbortError")
+    ) {
+      // Client disconnected - this is expected, don't log as error
+      return;
+    }
+    // Log actual errors
+    console.error("Error during Suspense streaming:", error);
+    // Let React handle error boundaries
+  };
+};
+
+/**
+ * Process chunk and inject HMR script if body tag found
+ */
+const processChunkForHmr = (
+  buffer: string,
+  hmrScript: string,
+  bodyClosed: { value: boolean }
+): { injected: boolean; result: string; remaining: string } => {
+  if (!bodyClosed.value && buffer.includes("</body>")) {
+    const parts = buffer.split("</body>");
+    if (parts.length === 2) {
+      const beforeBody = parts[0];
+      const afterBody = parts[1];
+      bodyClosed.value = true;
+      return {
+        injected: true,
+        result: `${beforeBody}${hmrScript}</body>${afterBody}`,
+        remaining: "",
+      };
+    }
+  }
+  return { injected: false, result: "", remaining: buffer };
+};
+
+/**
+ * Wrap stream with HMR script injection
+ */
+const wrapStreamWithHmr = (
+  stream: ReadableStream<Uint8Array>,
+  hmrScript: string
+): ReadableStream<Uint8Array> => {
+  return new ReadableStream({
+    async start(controller) {
+      const reader = stream.getReader();
+      let buffer = "";
+      const bodyClosed = { value: false };
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          const chunk = new TextDecoder().decode(value, { stream: true });
+          buffer += chunk;
+
+          const processed = processChunkForHmr(buffer, hmrScript, bodyClosed);
+          if (processed.injected) {
+            controller.enqueue(new TextEncoder().encode(processed.result));
+            buffer = processed.remaining;
+            continue;
+          }
+          buffer = processed.remaining;
+
+          // Forward chunks as they come
+          controller.enqueue(value);
+        }
+
+        // If we never found </body>, append HMR script at the end
+        if (!bodyClosed.value && buffer) {
+          const withHMR = `${buffer}${hmrScript}`;
+          controller.enqueue(new TextEncoder().encode(withHMR));
+        }
+
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+};
+
+/**
  * Render a route to HTML string (for build-time static generation)
  */
 export const renderRouteToString = async (
   routeInfo: RouteInfo,
-  params: Record<string, string> = {},
-  data: unknown
+  data: unknown,
+  params: Record<string, string> = {}
 ): Promise<string> => {
   try {
     // Import the page component
@@ -119,36 +318,17 @@ export const renderRouteToString = async (
     // Build props with params and data
     const pageProps: Record<string, unknown> = {};
     if (Object.keys(params).length > 0) {
-      pageProps.params = params;
+      pageProps["params"] = params;
     }
     if (data !== undefined) {
-      pageProps.data = data;
+      pageProps["data"] = data;
     }
 
     // Build the component tree
-    // Apply layouts in reverse order (innermost first, then wrap with outer layouts)
-    let component: React.ReactElement = React.createElement(
-      PageComponent,
-      pageProps
-    );
-    for (let i = layouts.length - 1; i >= 0; i--) {
-      const layout = layouts[i];
-      if (layout) {
-        const layoutProps =
-          i === 0
-            ? {
-                ...layout.props,
-                routePath: routeInfo.path,
-                hasClientComponents: needsHydration,
-              }
-            : layout.props || {};
-        component = React.createElement(
-          layout.component,
-          layoutProps,
-          component
-        );
-      }
-    }
+    const component = buildComponentTree(PageComponent, pageProps, layouts, {
+      routePath: routeInfo.path,
+      needsHydration,
+    });
 
     // Render to string
     const html = renderToString(component);
@@ -157,6 +337,8 @@ export const renderRouteToString = async (
     const hydrationScript = needsHydration
       ? '<script type="module" src="/hydrate.js"></script>'
       : "";
+
+    const hmrScript = getHmrScript();
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -168,7 +350,7 @@ export const renderRouteToString = async (
 </head>
 <body>
   <div id="root">${html}</div>
-  ${hydrationScript}
+  ${hydrationScript}${hmrScript}
 </body>
 </html>`;
   } catch (error) {
@@ -212,34 +394,17 @@ export const renderRoute = async (
     // Build props with params and data
     const pageProps: Record<string, unknown> = {};
     if (Object.keys(params).length > 0) {
-      pageProps.params = params;
+      pageProps["params"] = params;
     }
     if (pageData !== undefined) {
-      pageProps.data = pageData;
+      pageProps["data"] = pageData;
     }
 
     // Build the component tree
-    // Apply layouts in reverse order (innermost first, then wrap with outer layouts)
-    // So we wrap: page -> direct -> parent2 -> parent1 -> root
-    let component: React.ReactElement = React.createElement(
-      PageComponent,
-      pageProps
-    );
-    for (let i = layouts.length - 1; i >= 0; i--) {
-      const layout = layouts[i];
-      if (layout) {
-        // Pass routePath and hasClientComponents to the root layout (first layout, which is at index 0)
-        const props =
-          i === 0
-            ? {
-                ...layout.props,
-                routePath: routeInfo.path,
-                hasClientComponents: needsHydration,
-              }
-            : layout.props || {};
-        component = React.createElement(layout.component, props, component);
-      }
-    }
+    const component = buildComponentTree(PageComponent, pageProps, layouts, {
+      routePath: routeInfo.path,
+      needsHydration,
+    });
 
     // Render to stream with Suspense support
     // bootstrapModules injects scripts after content streams (for hydration)
@@ -248,21 +413,7 @@ export const renderRoute = async (
       bootstrapModules?: string[];
       onError: (error: unknown) => void;
     } = {
-      onError: (error: unknown) => {
-        // Ignore abort errors - these are normal when clients disconnect
-        if (
-          error instanceof Error &&
-          (error.message.includes("aborted") ||
-            error.message.includes("abort") ||
-            error.name === "AbortError")
-        ) {
-          // Client disconnected - this is expected, don't log as error
-          return;
-        }
-        // Log actual errors
-        console.error("Error during Suspense streaming:", error);
-        // Let React handle error boundaries
-      },
+      onError: createStreamErrorHandler(),
     };
 
     if (needsHydration) {
@@ -275,30 +426,8 @@ export const renderRoute = async (
     // needs the stream to be actively consumed for it to continue streaming.
     const stream = await renderToReadableStream(component, streamOptions);
 
-    // Create a wrapper stream that ensures React's stream is consumed actively
-    // This is necessary for React to continue resolving Suspense boundaries
-    // and stream content progressively. Without active consumption, React
-    // may wait for all promises to resolve before streaming.
-    const wrappedStream = new ReadableStream({
-      async start(controller) {
-        const reader = stream.getReader();
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            // Immediately forward chunks to ensure React continues streaming
-            controller.enqueue(value);
-          }
-          controller.close();
-        } catch (error) {
-          controller.error(error);
-        } finally {
-          reader.releaseLock();
-        }
-      },
-    });
+    const hmrScript = getHmrScript();
+    const wrappedStream = wrapStreamWithHmr(stream, hmrScript);
 
     return new Response(wrappedStream, {
       headers: {

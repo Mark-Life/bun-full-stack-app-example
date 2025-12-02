@@ -7,21 +7,37 @@ interface ClientOnlyProps {
 }
 
 /**
+ * Client-side implementation that uses hooks
+ */
+const ClientOnlyImpl = ({ children, fallback = null }: ClientOnlyProps) => {
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  if (!hasMounted) {
+    return <>{fallback}</>;
+  }
+
+  return <>{children}</>;
+};
+
+/**
  * Wrapper component that only renders children on the client.
  * Useful for components with hydration mismatches (like Radix UI with auto-generated IDs)
+ *
+ * On the server, returns fallback without executing client code.
+ * On the client, uses hooks to track mount state.
  */
 export const ClientOnly = clientComponent(
   ({ children, fallback = null }: ClientOnlyProps) => {
-    const [hasMounted, setHasMounted] = useState(false);
-
-    useEffect(() => {
-      setHasMounted(true);
-    }, []);
-
-    if (!hasMounted) {
+    // On server, return fallback immediately without executing client code
+    if (typeof window === "undefined") {
       return <>{fallback}</>;
     }
 
-    return <>{children}</>;
+    // On client, render the hook-based implementation
+    return <ClientOnlyImpl fallback={fallback}>{children}</ClientOnlyImpl>;
   }
 );
