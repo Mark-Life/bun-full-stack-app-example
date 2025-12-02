@@ -3,7 +3,7 @@
  * Handles detection of client components via type-safe wrapper
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { ComponentType as ReactComponentType } from "react";
 
 /**

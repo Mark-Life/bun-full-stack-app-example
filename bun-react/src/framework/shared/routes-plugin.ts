@@ -231,6 +231,9 @@ export const routesPlugin: BunPlugin = {
           );
         }
 
+        // Add page type
+        routeConfig.push(`pageType: "${routeInfo.pageType}"`);
+
         routeEntries.push(`  "${routePath}": { ${routeConfig.join(", ")} }`);
       }
 
@@ -239,6 +242,7 @@ export const routesPlugin: BunPlugin = {
 ${imports.join("\n")}
 
 export type ComponentType = "server" | "client";
+export type PageType = "static" | "dynamic";
 
 export interface RouteConfig {
   /** Lazy component - always defined, even for server components (they may contain client boundaries) */
@@ -255,6 +259,8 @@ export interface RouteConfig {
   parentLayoutTypes?: ComponentType[];
   isDynamic?: boolean;
   dynamicSegments?: string[];
+  /** Page rendering type: static (build-time) or dynamic (request-time) */
+  pageType: PageType;
 }
 
 export const routes: Record<string, RouteConfig> = {

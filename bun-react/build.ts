@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync } from "fs";
-import { mkdir, rm } from "fs/promises";
-import path from "path";
+import { existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
 import { discoverPublicAssets } from "./src/framework/server/public";
+import { renderRouteToString } from "./src/framework/server/render";
+import { getPageConfig, hasPageConfig } from "./src/framework/shared/page";
+import { discoverRoutes } from "./src/framework/shared/router";
 import { routesPlugin } from "./src/framework/shared/routes-plugin";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -272,10 +275,145 @@ const buildCssBundle = async () => {
   }
 };
 
+/**
+ * Resolve import path for build-time rendering
+ */
+const resolveImportPath = (importPath: string): string => {
+  if (importPath.startsWith("~/")) {
+    const pathWithoutAlias = importPath.slice(2);
+    return `./src/${pathWithoutAlias}`;
+  }
+  return importPath;
+};
+
+/**
+ * Build concrete path from route pattern and params
+ * /blog/:slug with { slug: 'post-1' } -> /blog/post-1
+ */
+const buildConcretePath = (
+  routePath: string,
+  params: Record<string, string>
+): string => {
+  let concretePath = routePath;
+  for (const [key, value] of Object.entries(params)) {
+    concretePath = concretePath.replace(`:${key}`, value);
+    concretePath = concretePath.replace(`*${key}`, value);
+  }
+  return concretePath;
+};
+
+/**
+ * Pre-render static pages at build time
+ */
+const preRenderStaticPages = async () => {
+  console.log("📄 Pre-rendering static pages...");
+
+  const { routes } = discoverRoutes("./src/app");
+  let staticCount = 0;
+
+  for (const [routePath, routeInfo] of routes.entries()) {
+    // Only pre-render static pages
+    if (routeInfo.pageType !== "static") {
+      continue;
+    }
+
+    try {
+      // Import the page component to access config
+      const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+      const pageModule = await import(resolvedPagePath);
+      const PageComponent = pageModule.default;
+
+      if (!PageComponent) {
+        console.warn(
+          `⚠️  No default export found in ${routeInfo.filePath}, skipping`
+        );
+        continue;
+      }
+
+      // Check if page has generateParams (for dynamic routes)
+      let paramSets: Record<string, string>[] = [{}];
+      if (routeInfo.isDynamic && routeInfo.hasStaticParams) {
+        if (hasPageConfig(PageComponent)) {
+          const config = getPageConfig(PageComponent);
+          if (config.generateParams) {
+            const generatedParams = await config.generateParams();
+            paramSets = generatedParams;
+          } else {
+            console.warn(
+              `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
+            );
+            continue;
+          }
+        } else {
+          console.warn(
+            `⚠️  Dynamic route ${routePath} marked as static but has no generateParams, skipping`
+          );
+          continue;
+        }
+      }
+
+      // Render each param combination
+      for (const params of paramSets) {
+        // Build concrete path for this param set
+        const concretePath =
+          routeInfo.isDynamic && Object.keys(params).length > 0
+            ? buildConcretePath(routePath, params)
+            : routePath;
+
+        // Load data if loader exists
+        let pageData: unknown;
+        if (routeInfo.hasLoader && hasPageConfig(PageComponent)) {
+          const config = getPageConfig(PageComponent);
+          if (config.loader) {
+            pageData = await config.loader();
+          }
+        }
+
+        // Render to HTML string
+        const html = await renderRouteToString(routeInfo, params, pageData);
+
+        // Determine output path
+        // / -> dist/pages/index.html
+        // /about -> dist/pages/about/index.html
+        // /blog/post-1 -> dist/pages/blog/post-1/index.html
+        const htmlPath =
+          concretePath === "/"
+            ? path.join(outdir, "pages", "index.html")
+            : path.join(outdir, "pages", concretePath.slice(1), "index.html");
+
+        // Ensure directory exists
+        await mkdir(path.dirname(htmlPath), { recursive: true });
+
+        // Write HTML file
+        await Bun.write(htmlPath, html);
+        staticCount++;
+
+        outputs.push({
+          File: path.relative(process.cwd(), htmlPath),
+          Type: "static page",
+          Size: formatFileSize(html.length),
+        });
+      }
+    } catch (error) {
+      console.error(
+        `❌ Failed to pre-render ${routePath}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  if (staticCount > 0) {
+    console.log(`✅ Pre-rendered ${staticCount} static page(s)\n`);
+  } else {
+    console.log("📄 No static pages to pre-render\n");
+  }
+};
+
 // Build all assets
 await buildHydrateBundle();
 await buildCssBundle();
 await copyPublicAssets();
+await preRenderStaticPages();
 
 const end = performance.now();
 

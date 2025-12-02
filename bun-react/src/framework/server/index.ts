@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { serve } from "bun";
 import { routesPlugin } from "@/framework/shared/routes-plugin";
 import { api } from "~/api";
@@ -60,6 +62,33 @@ console.log("API routes:", Object.keys(apiHandlers));
  * Apply middleware to API handlers
  */
 const wrappedApiHandlers = applyMiddleware(middlewareConfig, apiHandlers);
+
+/**
+ * Try to serve pre-rendered static HTML in production
+ */
+const tryServeStatic = (pathname: string): Response | null => {
+  // Only serve static pages in production
+  if (process.env.NODE_ENV !== "production") {
+    return null;
+  }
+
+  // Determine static HTML path
+  // / -> dist/pages/index.html
+  // /about -> dist/pages/about/index.html
+  const htmlPath =
+    pathname === "/"
+      ? join(process.cwd(), "dist", "pages", "index.html")
+      : join(process.cwd(), "dist", "pages", pathname.slice(1), "index.html");
+
+  if (existsSync(htmlPath)) {
+    const file = Bun.file(htmlPath);
+    return new Response(file, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+
+  return null;
+};
 
 const server = serve({
   routes: {
@@ -134,7 +163,13 @@ const server = serve({
         return new Response("Not found", { status: 404 });
       }
 
-      // Try to match route
+      // In production, try to serve pre-rendered static HTML first
+      const staticResponse = tryServeStatic(pathname);
+      if (staticResponse) {
+        return staticResponse;
+      }
+
+      // Try to match route and render dynamically (SSR)
       const response = matchAndRenderRoute(pathname);
       if (response) {
         return await response;

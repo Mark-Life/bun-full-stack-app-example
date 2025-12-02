@@ -1,5 +1,11 @@
-import { existsSync, readdirSync, statSync } from "fs";
-import { dirname, join, relative } from "path";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import {
+  extractPageType,
+  hasGenerateParams,
+  hasLoader,
+  type PageType,
+} from "~/framework/shared/page";
 import {
   type ComponentType,
   hasClientBoundariesSync,
@@ -29,6 +35,12 @@ export interface RouteInfo {
   layoutTypes: ComponentType[];
   /** Whether the page imports any client components (has client boundaries) */
   hasClientBoundaries: boolean;
+  /** Page rendering type: static (build-time), dynamic (request-time) */
+  pageType: PageType;
+  /** Has generateParams for static dynamic routes */
+  hasStaticParams: boolean;
+  /** Has loader for build-time data fetching */
+  hasLoader: boolean;
 }
 
 export interface RouteTree {
@@ -248,6 +260,11 @@ const scanDirectory = (
         // Check if the page imports any client components (has client boundaries)
         const hasClientBoundaries = hasClientBoundariesSync(fullPath);
 
+        // Detect page configuration
+        const pageType = extractPageType(fullPath);
+        const hasStaticParams = hasGenerateParams(fullPath);
+        const hasLoaderFn = hasLoader(fullPath);
+
         const routeInfo: RouteInfo = {
           path: routePath,
           filePath: fullPath,
@@ -256,6 +273,9 @@ const scanDirectory = (
           isClientComponent,
           layoutTypes,
           hasClientBoundaries,
+          pageType,
+          hasStaticParams,
+          hasLoader: hasLoaderFn,
           ...(dynamicSegments.length > 0 && { dynamicSegments }),
         };
         if (layoutPath) {
@@ -316,6 +336,9 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
       isClientComponent: routeInfo.isClientComponent,
       layoutTypes: routeInfo.layoutTypes,
       hasClientBoundaries: routeInfo.hasClientBoundaries,
+      pageType: routeInfo.pageType,
+      hasStaticParams: routeInfo.hasStaticParams,
+      hasLoader: routeInfo.hasLoader,
     };
     if (routeInfo.layoutPath) {
       updatedRouteInfo.layoutPath = toImportPath(routeInfo.layoutPath, srcDir);

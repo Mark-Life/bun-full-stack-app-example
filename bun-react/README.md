@@ -23,10 +23,6 @@ bun start    # production
 - [x] **Tailwind CSS** - Bundled via `bun-plugin-tailwind`
 - [x] **Public Assets Management** - `src/public/` folder for static assets (icons, images, fonts, etc.) automatically served at root path
 
-### Partial
-
-- [ ] **Client-side Navigation** - Currently full page reload, not SPA-style `pushState`
-
 ### Implemented (RSC Support)
 
 - [x] **React Server Components (RSC)** - Server-first model with client boundaries
@@ -55,13 +51,20 @@ bun start    # production
   - Selective middleware application per route
   - Request/response interception and modification
 
+### Implemented (Static Site Generation)
+
+- [x] **Static Site Generation (SSG)** - Build-time pre-rendering with `definePage()`
+  - Declare pages as `static` or `dynamic` (default: `dynamic`)
+  - `loader` function for build-time data fetching
+  - `generateParams` for static dynamic routes
+  - Pre-rendered HTML served in production, SSR fallback
+
 ### Not Yet Implemented
 
 - [ ] **Dynamic Route Demo** - Example page demonstrating dynamic route parameters (`[param]` and `[...param]`)
 - [ ] **`loading.tsx`** - Route-level loading states
-- [ ] **Server Functions / Data Loaders** - `getServerSideProps`-style data fetching
-- [ ] **Static Site Generation (SSG)** - Build-time pre-rendering
 - [ ] **Incremental Static Regeneration (ISR)** - On-demand revalidation
+- [ ] **Client-side Navigation** - Currently full page reload. add functionality to use SPA-style `pushState`
 - [ ] **404 page**
 
 ## Architecture
@@ -187,6 +190,101 @@ export default defineMiddleware({
   },
 });
 ```
+
+#### Static Site Generation (SSG)
+
+Define pages as static (pre-rendered at build time) or dynamic (rendered on request).
+
+**Static Page**
+
+```typescript
+// app/about/page.tsx
+import { definePage } from "~/framework/shared/page";
+
+export default definePage({
+  type: 'static',
+  component: () => (
+    <div>
+      <h1>About Us</h1>
+      <p>This page is pre-rendered at build time.</p>
+    </div>
+  ),
+});
+```
+
+**Static Page with Loader**
+
+```typescript
+// app/blog/page.tsx
+import { definePage } from "~/framework/shared/page";
+
+export default definePage({
+  type: 'static',
+  loader: async () => {
+    const posts = await fetchPosts();
+    return { posts };
+  },
+  component: ({ data }) => (
+    <div>
+      <h1>Blog</h1>
+      {data.posts.map(post => <Post key={post.id} {...post} />)}
+    </div>
+  ),
+});
+```
+
+**Static Dynamic Route**
+
+```typescript
+// app/blog/[slug]/page.tsx
+import { definePage } from "~/framework/shared/page";
+
+export default definePage({
+  type: 'static',
+  generateParams: async () => {
+    const posts = await fetchAllPosts();
+    return posts.map(p => ({ slug: p.slug }));
+  },
+  component: ({ params }) => <BlogPost slug={params.slug} />,
+});
+```
+
+**Dynamic Page (Default)**
+
+```typescript
+// app/dashboard/page.tsx
+// No wrapper = dynamic (SSR)
+export default function Dashboard() {
+  return <div>Always server-rendered</div>;
+}
+
+// OR explicit
+import { definePage } from "~/framework/shared/page";
+export default definePage({
+  type: 'dynamic',
+  component: Dashboard,
+});
+```
+
+**Build Output**
+
+Static pages are pre-rendered to `dist/pages/`:
+```
+dist/
+├── hydrate.js
+├── index.css
+└── pages/
+    ├── index.html          # / (if static)
+    ├── about/
+    │   └── index.html      # /about
+    └── blog/
+        ├── post-1/
+        │   └── index.html  # /blog/post-1
+        └── post-2/
+            └── index.html  # /blog/post-2
+```
+
+In production, static HTML is served directly. Dynamic pages fall back to SSR.
 
 ---
 

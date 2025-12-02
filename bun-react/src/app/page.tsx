@@ -46,6 +46,12 @@ export default function HomePage() {
             <div className="flex justify-center gap-4">
               <Link
                 className="font-medium text-blue-600 hover:underline"
+                href="/landing"
+              >
+                Landing (Static)
+              </Link>
+              <Link
+                className="font-medium text-blue-600 hover:underline"
                 href="/about"
               >
                 About

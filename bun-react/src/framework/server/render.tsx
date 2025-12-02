@@ -1,6 +1,7 @@
 import React from "react";
-import { renderToReadableStream } from "react-dom/server";
+import { renderToReadableStream, renderToString } from "react-dom/server";
 import type { RouteInfo } from "@/framework/shared/router";
+import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 
 /**
  * Resolve import path, converting ~/ alias to actual file path
@@ -45,9 +46,60 @@ export const hasClientComponents = (routeInfo: RouteInfo): boolean => {
 };
 
 /**
- * Render a route with its layout hierarchy
+ * Load layouts for a route
  */
-export const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
+const loadLayouts = async (
+  routeInfo: RouteInfo
+): Promise<
+  Array<{
+    component: React.ComponentType<Record<string, unknown>>;
+    props?: Record<string, unknown>;
+  }>
+> => {
+  const layouts: Array<{
+    component: React.ComponentType<Record<string, unknown>>;
+    props?: Record<string, unknown>;
+  }> = [];
+
+  // Add parent layouts first (root to direct parent)
+  for (const layoutPath of routeInfo.parentLayouts) {
+    try {
+      const resolvedLayoutPath = resolveImportPath(layoutPath);
+      const layoutModule = await import(resolvedLayoutPath);
+      const LayoutComponent = layoutModule.default;
+      if (LayoutComponent) {
+        layouts.push({ component: LayoutComponent });
+      }
+    } catch (error) {
+      console.warn(`Failed to load layout ${layoutPath}:`, error);
+    }
+  }
+
+  // Add direct layout last (closest to the page)
+  if (routeInfo.layoutPath) {
+    try {
+      const resolvedLayoutPath = resolveImportPath(routeInfo.layoutPath);
+      const layoutModule = await import(resolvedLayoutPath);
+      const LayoutComponent = layoutModule.default;
+      if (LayoutComponent) {
+        layouts.push({ component: LayoutComponent });
+      }
+    } catch (error) {
+      console.warn(`Failed to load layout ${routeInfo.layoutPath}:`, error);
+    }
+  }
+
+  return layouts;
+};
+
+/**
+ * Render a route to HTML string (for build-time static generation)
+ */
+export const renderRouteToString = async (
+  routeInfo: RouteInfo,
+  params: Record<string, string> = {},
+  data: unknown
+): Promise<string> => {
   try {
     // Import the page component
     const resolvedPagePath = resolveImportPath(routeInfo.filePath);
@@ -58,49 +110,121 @@ export const renderRoute = async (routeInfo: RouteInfo): Promise<Response> => {
       throw new Error(`No default export found in ${routeInfo.filePath}`);
     }
 
-    // Build layout hierarchy
-    // Layouts should be applied from root to leaf (outermost to innermost)
-    // So we collect: [root, parent1, parent2, ..., direct]
-    const layouts: Array<{
-      component: React.ComponentType<Record<string, unknown>>;
-      props?: Record<string, unknown>;
-    }> = [];
-
-    // Add parent layouts first (root to direct parent)
-    for (const layoutPath of routeInfo.parentLayouts) {
-      try {
-        const resolvedLayoutPath = resolveImportPath(layoutPath);
-        const layoutModule = await import(resolvedLayoutPath);
-        const LayoutComponent = layoutModule.default;
-        if (LayoutComponent) {
-          layouts.push({ component: LayoutComponent });
-        }
-      } catch (error) {
-        console.warn(`Failed to load layout ${layoutPath}:`, error);
-      }
-    }
-
-    // Add direct layout last (closest to the page)
-    if (routeInfo.layoutPath) {
-      try {
-        const resolvedLayoutPath = resolveImportPath(routeInfo.layoutPath);
-        const layoutModule = await import(resolvedLayoutPath);
-        const LayoutComponent = layoutModule.default;
-        if (LayoutComponent) {
-          layouts.push({ component: LayoutComponent });
-        }
-      } catch (error) {
-        console.warn(`Failed to load layout ${routeInfo.layoutPath}:`, error);
-      }
-    }
+    // Load layouts
+    const layouts = await loadLayouts(routeInfo);
 
     // Check if route has any client components
     const needsHydration = hasClientComponents(routeInfo);
 
+    // Build props with params and data
+    const pageProps: Record<string, unknown> = {};
+    if (Object.keys(params).length > 0) {
+      pageProps.params = params;
+    }
+    if (data !== undefined) {
+      pageProps.data = data;
+    }
+
+    // Build the component tree
+    // Apply layouts in reverse order (innermost first, then wrap with outer layouts)
+    let component: React.ReactElement = React.createElement(
+      PageComponent,
+      pageProps
+    );
+    for (let i = layouts.length - 1; i >= 0; i--) {
+      const layout = layouts[i];
+      if (layout) {
+        const layoutProps =
+          i === 0
+            ? {
+                ...layout.props,
+                routePath: routeInfo.path,
+                hasClientComponents: needsHydration,
+              }
+            : layout.props || {};
+        component = React.createElement(
+          layout.component,
+          layoutProps,
+          component
+        );
+      }
+    }
+
+    // Render to string
+    const html = renderToString(component);
+
+    // Wrap in full HTML document
+    const hydrationScript = needsHydration
+      ? '<script type="module" src="/hydrate.js"></script>'
+      : "";
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page</title>
+  <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <div id="root">${html}</div>
+  ${hydrationScript}
+</body>
+</html>`;
+  } catch (error) {
+    console.error(`Error rendering route ${routeInfo.path}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Render a route with its layout hierarchy
+ */
+export const renderRoute = async (
+  routeInfo: RouteInfo,
+  params: Record<string, string> = {}
+): Promise<Response> => {
+  try {
+    // Import the page component
+    const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+    const pageModule = await import(resolvedPagePath);
+    const PageComponent = pageModule.default;
+
+    if (!PageComponent) {
+      throw new Error(`No default export found in ${routeInfo.filePath}`);
+    }
+
+    // Check if page has loader (for dynamic routes with data fetching)
+    let pageData: unknown;
+    if (hasPageConfig(PageComponent)) {
+      const config = getPageConfig(PageComponent);
+      if (config.loader) {
+        pageData = await config.loader();
+      }
+    }
+
+    // Load layouts
+    const layouts = await loadLayouts(routeInfo);
+
+    // Check if route has any client components
+    const needsHydration = hasClientComponents(routeInfo);
+
+    // Build props with params and data
+    const pageProps: Record<string, unknown> = {};
+    if (Object.keys(params).length > 0) {
+      pageProps.params = params;
+    }
+    if (pageData !== undefined) {
+      pageProps.data = pageData;
+    }
+
     // Build the component tree
     // Apply layouts in reverse order (innermost first, then wrap with outer layouts)
     // So we wrap: page -> direct -> parent2 -> parent1 -> root
-    let component: React.ReactElement = React.createElement(PageComponent);
+    let component: React.ReactElement = React.createElement(
+      PageComponent,
+      pageProps
+    );
     for (let i = layouts.length - 1; i >= 0; i--) {
       const layout = layouts[i];
       if (layout) {
