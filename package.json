@@ -1,0 +1,11 @@
+{
+  "name": "bun-full-stack-app-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@biomejs/biome": "2.3.8",
+    "ultracite": "6.3.8"
+  }
+}
+

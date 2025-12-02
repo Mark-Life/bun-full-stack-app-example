@@ -3,11 +3,12 @@
   "extends": ["ultracite/core", "ultracite/react"],
   "files": {
     "includes": [
-      "!node_modules",
-      "!dist",
-      "!build",
-      "!bun.lock",
-      "!src/components/ui"
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/bun.lock",
+      "!**/src/components/ui",
+      "!**/docs"
     ]
   },
   "javascript": {
