@@ -412,7 +412,7 @@ export const renderRoute = async (
     if (hasPageConfig(PageComponent)) {
       const config = getPageConfig(PageComponent);
       if (config.loader) {
-        pageData = await config.loader();
+        pageData = await config.loader(params);
       }
     }
 

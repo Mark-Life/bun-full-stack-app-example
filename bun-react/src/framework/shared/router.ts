@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import {
   extractPageType,
+  extractRevalidate,
   hasGenerateParams,
   hasLoader,
   type PageType,
@@ -52,6 +53,8 @@ export interface RouteInfo {
   hasLoader: boolean;
   /** Whether this route is in a client-navigable group (SPA-style navigation) */
   clientNavigable: boolean;
+  /** ISR revalidation interval in seconds. Undefined = no ISR */
+  revalidate?: number;
 }
 
 export interface RouteTree {
@@ -266,6 +269,7 @@ const processRouteFile = (
   const pageType = extractPageType(fullPath);
   const hasStaticParams = hasGenerateParams(fullPath);
   const hasLoaderFn = hasLoader(fullPath);
+  const revalidateValue = extractRevalidate(fullPath);
 
   const routeInfo: RouteInfo = {
     path: routePath,
@@ -279,6 +283,7 @@ const processRouteFile = (
     hasStaticParams,
     hasLoader: hasLoaderFn,
     clientNavigable,
+    ...(revalidateValue !== undefined && { revalidate: revalidateValue }),
     ...(dynamicSegments.length > 0 && { dynamicSegments }),
   };
   if (layoutPath) {
@@ -357,6 +362,12 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
   const routes = new Map<string, RouteInfo>();
   const layouts = new Map<string, string>();
 
+  // Guard against running in browser environment
+  if (typeof process === "undefined" || typeof process.cwd !== "function") {
+    // Return empty route tree if running in browser (should never happen, but guard against it)
+    return { routes, layouts };
+  }
+
   const resolvedAppDir = join(process.cwd(), appDir);
   const srcDir = join(process.cwd(), "src");
 
@@ -381,6 +392,9 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
       hasStaticParams: routeInfo.hasStaticParams,
       hasLoader: routeInfo.hasLoader,
       clientNavigable: routeInfo.clientNavigable,
+      ...(routeInfo.revalidate !== undefined && {
+        revalidate: routeInfo.revalidate,
+      }),
     };
     if (routeInfo.layoutPath) {
       updatedRouteInfo.layoutPath = toImportPath(routeInfo.layoutPath, srcDir);

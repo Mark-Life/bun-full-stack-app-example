@@ -93,9 +93,21 @@ export default function HomePage() {
             <div className="flex flex-wrap justify-center gap-4">
               <Link
                 className="font-medium text-green-600 hover:underline"
-                href="/products/123"
+                href="/products"
               >
-                [id] - Product 123
+                Products (ISR)
+              </Link>
+              <Link
+                className="font-medium text-green-600 hover:underline"
+                href="/products/1"
+              >
+                [id] - Product Detail
+              </Link>
+              <Link
+                className="font-medium text-orange-600 hover:underline"
+                href="/admin/products"
+              >
+                Admin (Revalidate)
               </Link>
               <Link
                 className="font-medium text-green-600 hover:underline"

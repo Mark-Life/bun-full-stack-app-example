@@ -22,6 +22,7 @@ bun start    # production
 - [x] **HMR** - Hot module reload in development
 - [x] **Tailwind CSS** - Bundled via `bun-plugin-tailwind`
 - [x] **Public Assets Management** - `src/public/` folder for static assets (icons, images, fonts, etc.) automatically served at root path
+- [x] **Incremental Static Regeneration (ISR)** - Time-based and on-demand revalidation with hybrid cache
 
 ### Implemented
 
@@ -76,7 +77,6 @@ bun start    # production
 ### Not Yet Implemented
 
 - [ ] **`loading.tsx`** - Route-level loading states
-- [ ] **Incremental Static Regeneration (ISR)** - On-demand revalidation
 
 ## Architecture
 
@@ -201,6 +201,102 @@ export default defineMiddleware({
   },
 });
 ```
+
+#### Incremental Static Regeneration (ISR)
+
+ISR allows static pages to be regenerated at runtime without requiring a full rebuild. Pages are served from cache and revalidated in the background when stale.
+
+**ISR-Enabled Static Page**
+
+```typescript
+// app/products/page.tsx
+import { definePage } from "~/framework/shared/page";
+
+export default definePage({
+  type: 'static',
+  revalidate: 3600, // Revalidate every hour (in seconds)
+  loader: async () => {
+    const products = await fetchProducts();
+    return { products };
+  },
+  component: ({ data }) => (
+    <div>
+      <h1>Products</h1>
+      {data.products.map(product => <Product key={product.id} {...product} />)}
+    </div>
+  ),
+});
+```
+
+**ISR-Enabled Dynamic Route**
+
+```typescript
+// app/products/[id]/page.tsx
+import { definePage } from "~/framework/shared/page";
+
+export default definePage({
+  type: 'static',
+  revalidate: 3600, // Revalidate every hour
+  generateParams: async () => {
+    const products = await fetchAllProducts();
+    return products.map(p => ({ id: p.id }));
+  },
+  loader: async (params) => {
+    const product = await getProductById(params.id);
+    return { product };
+  },
+  component: ({ params, data }) => (
+    <div>
+      <h1>{data.product.name}</h1>
+      <p>{data.product.description}</p>
+    </div>
+  ),
+});
+```
+
+**How ISR Works**
+
+1. **First Request**: Page is rendered and cached (served with `X-Cache: MISS`)
+2. **Subsequent Requests**: 
+   - If cache is fresh (< revalidate seconds old): Served from cache (`X-Cache: HIT`)
+   - If cache is stale: Served stale content (`X-Cache: STALE`) while regenerating in background
+3. **Background Revalidation**: Stale pages are regenerated automatically with concurrency limit (max 3 concurrent)
+4. **Cache Storage**: Hybrid cache (in-memory + disk) - survives server restarts
+
+**On-Demand Revalidation**
+
+Trigger immediate revalidation via API endpoint:
+
+```typescript
+// When content changes (e.g., product updated)
+await fetch('/api/revalidate', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    path: '/products/123',
+    secret: process.env.REVALIDATE_SECRET,
+  }),
+});
+```
+
+The revalidation API:
+- Invalidates existing cache
+- Immediately regenerates the page
+- Updates cache with fresh content
+
+**Cache Headers**
+
+Responses include `X-Cache` header for debugging:
+- `HIT` - Served from fresh cache
+- `STALE` - Served stale content, revalidating in background
+- `MISS` - First request, rendered and cached
+
+**Example: Product Portal**
+
+See `/products` and `/admin/products` routes in this project for a complete ISR example:
+- Products listing page with ISR (`revalidate: 60` seconds)
+- Product detail pages with ISR (`revalidate: 3600` seconds = 1 hour)
+- Admin panel to update products and trigger on-demand revalidation
 
 #### Static Site Generation (SSG)
 

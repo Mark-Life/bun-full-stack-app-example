@@ -6,6 +6,7 @@ import {
   type RouteInfo,
   type RouteTree,
 } from "@/framework/shared/router";
+import { hasClientNavigation } from "~/framework/shared/layout";
 import {
   extractPageType,
   hasGenerateParams,
@@ -75,17 +76,20 @@ const findNotFoundLayouts = (
   layoutPath?: string;
   parentLayouts: string[];
   layoutTypes: ComponentType[];
+  clientNavigable: boolean;
 } => {
   const rootLayout = join(appDir, LAYOUT_FILE);
   if (existsSync(rootLayout)) {
     const isClient = hasUseClientDirective(rootLayout);
+    const clientNavigable = hasClientNavigation(rootLayout);
     return {
       layoutPath: toImportPath(rootLayout, srcDir),
       parentLayouts: [],
       layoutTypes: [isClient ? "client" : "server"],
+      clientNavigable,
     };
   }
-  return { parentLayouts: [], layoutTypes: [] };
+  return { parentLayouts: [], layoutTypes: [], clientNavigable: false };
 };
 
 /**
@@ -100,10 +104,8 @@ export const getNotFoundRouteInfo = (): RouteInfo | null => {
     return null;
   }
 
-  const { layoutPath, parentLayouts, layoutTypes } = findNotFoundLayouts(
-    appDir,
-    srcDir
-  );
+  const { layoutPath, parentLayouts, layoutTypes, clientNavigable } =
+    findNotFoundLayouts(appDir, srcDir);
 
   const isClientComponent = hasUseClientDirective(notFoundPath);
   const hasClientBoundaries = hasClientBoundariesSync(notFoundPath);
@@ -121,6 +123,7 @@ export const getNotFoundRouteInfo = (): RouteInfo | null => {
     pageType,
     hasStaticParams,
     hasLoader: hasLoaderFn,
+    clientNavigable,
   };
 
   if (layoutPath) {

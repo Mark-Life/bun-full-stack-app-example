@@ -5,11 +5,16 @@ import { routesPlugin } from "@/framework/shared/routes-plugin";
 import { api } from "~/api";
 import { generateRouteTypes } from "~/framework/shared/generate-route-types";
 import { applyMiddleware } from "~/framework/shared/middleware";
+import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
+import { matchRoute, type RouteInfo } from "~/framework/shared/router";
 import middlewareConfig from "~/middleware";
+import { getFromCache, isStale, setCache } from "./cache";
 import { discoverPublicAssets } from "./public";
-import { renderRoute } from "./render";
+import { renderRoute, renderRouteToString } from "./render";
+import { queueRevalidation } from "./revalidate";
 import {
   getNotFoundRouteInfo,
+  getRouteTree,
   matchAndRenderRoute,
   rediscoverRoutes,
 } from "./routes";
@@ -70,30 +75,126 @@ console.log("API routes:", Object.keys(apiHandlers));
 const wrappedApiHandlers = applyMiddleware(middlewareConfig, apiHandlers);
 
 /**
- * Try to serve pre-rendered static HTML in production
+ * Resolve import path, converting ~/ alias to relative path
+ * ~/ maps to ./src/ relative to project root
+ * Since we're in framework/server/, we need to go up to src/
  */
-const tryServeStatic = (pathname: string): Response | null => {
-  // Only serve static pages in production
-  if (process.env.NODE_ENV !== "production") {
-    return null;
+const resolveImportPath = (importPath: string): string => {
+  if (importPath.startsWith("~/")) {
+    // Convert ~/app/page.tsx to ../../app/page.tsx (from framework/server/ to src/)
+    const pathWithoutAlias = importPath.slice(2); // Remove ~/
+    return `../../${pathWithoutAlias}`;
+  }
+  return importPath;
+};
+
+/**
+ * Render and cache a route for ISR
+ */
+const renderAndCache = async (
+  pathname: string,
+  routeInfo: RouteInfo,
+  params: Record<string, string>
+): Promise<string> => {
+  // Load page component to check for loader
+  const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+  const pageModule = await import(resolvedPagePath);
+  const PageComponent = pageModule.default;
+
+  if (!PageComponent) {
+    throw new Error(`No default export found in ${routeInfo.filePath}`);
   }
 
-  // Determine static HTML path
-  // / -> dist/pages/index.html
-  // /about -> dist/pages/about/index.html
-  const htmlPath =
-    pathname === "/"
-      ? join(process.cwd(), "dist", "pages", "index.html")
-      : join(process.cwd(), "dist", "pages", pathname.slice(1), "index.html");
+  // Load page data if loader exists
+  let pageData: unknown;
+  if (hasPageConfig(PageComponent)) {
+    const config = getPageConfig(PageComponent);
+    if (config.loader) {
+      pageData = await config.loader(params);
+    }
+  }
 
-  if (existsSync(htmlPath)) {
-    const file = Bun.file(htmlPath);
-    return new Response(file, {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+  // Render the page
+  const html = await renderRouteToString(routeInfo, pageData, params);
+
+  // Cache the result
+  if (routeInfo.revalidate) {
+    await setCache(pathname, {
+      html,
+      generatedAt: Date.now(),
+      revalidate: routeInfo.revalidate,
     });
   }
 
-  return null;
+  return html;
+};
+
+/**
+ * Try to serve with ISR (cache-aware serving)
+ */
+const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
+  // Check cache first
+  const cached = await getFromCache(pathname);
+
+  if (cached) {
+    if (!isStale(cached)) {
+      // Fresh - serve cached with HIT header
+      return new Response(cached.html, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "X-Cache": "HIT",
+        },
+      });
+    }
+
+    // Stale - serve cached but queue background revalidation
+    queueRevalidation(pathname);
+    return new Response(cached.html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Cache": "STALE",
+      },
+    });
+  }
+
+  // Cache miss - check if ISR-enabled route
+  const routeTree = getRouteTree();
+  const matchResult = matchRoute(pathname, routeTree.routes);
+
+  if (
+    matchResult?.route.pageType === "static" &&
+    matchResult.route.revalidate
+  ) {
+    // ISR-enabled static route - render, cache, and serve
+    const html = await renderAndCache(
+      pathname,
+      matchResult.route,
+      matchResult.params
+    );
+    return new Response(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Cache": "MISS",
+      },
+    });
+  }
+
+  // Fall back to pre-rendered static HTML in production (non-ISR static pages)
+  if (process.env.NODE_ENV === "production") {
+    const htmlPath =
+      pathname === "/"
+        ? join(process.cwd(), "dist", "pages", "index.html")
+        : join(process.cwd(), "dist", "pages", pathname.slice(1), "index.html");
+
+    if (existsSync(htmlPath)) {
+      const file = Bun.file(htmlPath);
+      return new Response(file, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+  }
+
+  return null; // Fall through to SSR
 };
 
 // Build server config conditionally for dev/prod
@@ -181,10 +282,10 @@ const serverConfig = {
         return new Response("Not found", { status: 404 });
       }
 
-      // In production, try to serve pre-rendered static HTML first
-      const staticResponse = tryServeStatic(pathname);
-      if (staticResponse) {
-        return staticResponse;
+      // Try ISR-aware serving (cache-first, then pre-rendered, then SSR)
+      const isrResponse = await tryServeWithISR(pathname);
+      if (isrResponse) {
+        return isrResponse;
       }
 
       // Try to match route and render dynamically (SSR)

@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { setCache } from "./src/framework/server/cache";
 import { discoverPublicAssets } from "./src/framework/server/public";
 import { renderRouteToString } from "./src/framework/server/render";
 import { generateRouteTypes } from "./src/framework/shared/generate-route-types";
@@ -431,7 +432,8 @@ const getParamSets = async (
  */
 const loadPageData = async (
   routeInfo: RouteInfo,
-  PageComponent: unknown
+  PageComponent: unknown,
+  params: Record<string, string> = {}
 ): Promise<unknown> => {
   if (!(routeInfo.hasLoader && hasPageConfig(PageComponent))) {
     return;
@@ -442,7 +444,7 @@ const loadPageData = async (
     return;
   }
 
-  return await config.loader();
+  return await config.loader(params);
 };
 
 /**
@@ -459,7 +461,7 @@ const renderSinglePage = async (
       ? buildConcretePath(routePath, params)
       : routePath;
 
-  const pageData = await loadPageData(routeInfo, PageComponent);
+  const pageData = await loadPageData(routeInfo, PageComponent, params);
   const html = await renderRouteToString(routeInfo, pageData, params);
 
   const htmlPath =
@@ -475,6 +477,15 @@ const renderSinglePage = async (
     Type: "static page",
     Size: formatFileSize(html.length),
   });
+
+  // Initialize cache entry for ISR-enabled pages
+  if (routeInfo.revalidate) {
+    await setCache(concretePath, {
+      html,
+      generatedAt: Date.now(),
+      revalidate: routeInfo.revalidate,
+    });
+  }
 };
 
 /**

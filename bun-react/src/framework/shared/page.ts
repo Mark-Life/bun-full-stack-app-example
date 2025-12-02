@@ -22,8 +22,12 @@ export type GenerateParamsFn<
 /**
  * Data loader for build-time data fetching
  * Returns data that will be passed to component as props.data
+ * For dynamic routes, params are passed to the loader
  */
-export type LoaderFn<TData = unknown> = () => TData | Promise<TData>;
+export type LoaderFn<
+  TData = unknown,
+  TParams extends Record<string, string> = Record<string, string>,
+> = (params?: TParams) => TData | Promise<TData>;
 
 /**
  * Page configuration attached to components
@@ -34,7 +38,9 @@ export interface PageConfig<
 > {
   type: PageType;
   generateParams?: GenerateParamsFn<TParams>;
-  loader?: LoaderFn<TData>;
+  loader?: LoaderFn<TData, TParams>;
+  /** ISR revalidation interval in seconds. Undefined = no ISR (pure static or dynamic) */
+  revalidate?: number;
 }
 
 /**
@@ -96,17 +102,26 @@ export const definePage = <
   component: ReactComponentType<P>;
   type?: PageType;
   generateParams?: GenerateParamsFn<TParams>;
-  loader?: LoaderFn<TData>;
+  loader?: LoaderFn<TData, TParams>;
+  revalidate?: number;
 }): ConfiguredPage<P> => {
-  const { component, type = "dynamic", generateParams, loader } = pageConfig;
+  const {
+    component,
+    type = "dynamic",
+    generateParams,
+    loader,
+    revalidate,
+  } = pageConfig;
 
   // Attach config to component
-  const attachedConfig: PageConfig<TParams, TData> = {
+  const attachedConfig = {
     type,
     ...(generateParams && { generateParams }),
     ...(loader && { loader }),
-  };
-  (component as ConfiguredPage<P>)[PAGE_CONFIG_MARKER] = attachedConfig;
+    ...(revalidate !== undefined && { revalidate }),
+  } as PageConfig<TParams, TData>;
+  (component as ConfiguredPage<P>)[PAGE_CONFIG_MARKER] =
+    attachedConfig as unknown as PageConfig;
 
   return component as ConfiguredPage<P>;
 };
@@ -128,7 +143,7 @@ export const getPageConfig = <
 >(
   component: ConfiguredPage
 ): PageConfig<TParams, TData> =>
-  component[PAGE_CONFIG_MARKER] as PageConfig<TParams, TData>;
+  component[PAGE_CONFIG_MARKER] as unknown as PageConfig<TParams, TData>;
 
 // Regex pattern for definePage usage
 const DEFINE_PAGE_REGEX = /definePage\s*\(/;
@@ -149,6 +164,7 @@ export const hasDefinePageUsage = (filePath: string): boolean => {
 const STATIC_TYPE_REGEX = /type:\s*['"]static['"]/;
 const GENERATE_PARAMS_REGEX = /generateParams\s*[:=]/;
 const LOADER_REGEX = /loader\s*[:=]/;
+const REVALIDATE_REGEX = /revalidate\s*:\s*(\d+)/;
 
 /**
  * Extract page type from file content
@@ -191,5 +207,22 @@ export const hasLoader = (filePath: string): boolean => {
     return LOADER_REGEX.test(content);
   } catch {
     return false;
+  }
+};
+
+/**
+ * Extract revalidate interval from file content
+ * Returns the number of seconds, or undefined if not found
+ */
+export const extractRevalidate = (filePath: string): number | undefined => {
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    const match = content.match(REVALIDATE_REGEX);
+    if (match?.[1]) {
+      return Number.parseInt(match[1], 10);
+    }
+    return;
+  } catch {
+    return;
   }
 };
