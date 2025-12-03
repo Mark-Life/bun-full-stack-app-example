@@ -107,6 +107,10 @@ export const RootShell = ({
         ))
       : null;
 
+  // Process polyfill for browser environment (needed for code-split chunks)
+  // This must be defined before any chunks load
+  const processPolyfill = `if(typeof process==="undefined"){var process={env:{NODE_ENV:"${process.env.NODE_ENV || "production"}"}};}`;
+
   return (
     <html lang="en">
       <head>
@@ -116,6 +120,11 @@ export const RootShell = ({
         <title>{title}</title>
         <link href="/logo.svg" rel="icon" type="image/svg+xml" />
         <link href="/index.css" rel="stylesheet" />
+        {/* Process polyfill - must be first to ensure chunks can access it */}
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: process polyfill needed for chunks
+          dangerouslySetInnerHTML={{ __html: processPolyfill }}
+        />
         {/* Preload hydration script for faster Time to Interactive */}
         {shouldPreloadHydration ? (
           <link href="/hydrate.js" rel="modulepreload" />

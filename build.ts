@@ -572,6 +572,11 @@ const generateChunkManifest = async (
  */
 const buildHydrateBundle = async () => {
   console.log("🔨 Building hydration bundle...");
+
+  // Process polyfill for browser environment
+  // Note: Chunks don't get banners, so the polyfill is also injected in HTML
+  const processPolyfill = `if(typeof process==="undefined"){var process={env:{NODE_ENV:"production"}};}`;
+
   const result = await Bun.build({
     entrypoints: ["./src/framework/client/hydrate.tsx"],
     outdir, // Required for code splitting
@@ -585,6 +590,7 @@ const buildHydrateBundle = async () => {
       "process.env.NODE_ENV": JSON.stringify("production"),
       ...cliConfig.define,
     },
+    banner: processPolyfill, // Add to entry point (chunks get polyfill from HTML)
   });
 
   if (!result.success) {

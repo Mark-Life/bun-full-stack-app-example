@@ -38,14 +38,29 @@ const logWarn = console.warn; // Always log warnings
 
 /**
  * Build and cache the hydration bundle
+ * In production, serves pre-built file from dist/ to use code-split chunks
  */
 let hydrateBundleCache: string | null = null;
 
 const buildHydrateBundle = async (): Promise<string> => {
-  if (hydrateBundleCache && process.env.NODE_ENV === "production") {
-    return hydrateBundleCache;
+  // In production, serve pre-built bundle from dist/ (uses code splitting)
+  if (process.env.NODE_ENV === "production") {
+    if (hydrateBundleCache) {
+      return hydrateBundleCache;
+    }
+
+    const hydratePath = join(process.cwd(), "dist", "hydrate.js");
+    if (existsSync(hydratePath)) {
+      const file = Bun.file(hydratePath);
+      const bundle = await file.text();
+      hydrateBundleCache = bundle;
+      return bundle;
+    }
+
+    logWarn("⚠️  Pre-built hydrate.js not found, falling back to rebuild");
   }
 
+  // Development: rebuild on-demand
   const tailwindPlugin = await import("bun-plugin-tailwind");
   const isProduction = process.env.NODE_ENV === "production";
   const nodeEnv = process.env.NODE_ENV || "development";
@@ -256,6 +271,42 @@ const renderAndCache = async (
 };
 
 /**
+ * Serve code-split chunk files (production only)
+ * Serves any .js file from dist/ except hydrate.js and server.js
+ */
+const serveChunk = (pathname: string): Response | null => {
+  if (process.env.NODE_ENV !== "production") {
+    return null;
+  }
+
+  // Only serve .js files
+  if (!pathname.endsWith(".js")) {
+    return null;
+  }
+
+  const filename = pathname.split("/").pop();
+  if (!filename) {
+    return null;
+  }
+
+  // Skip known entry points
+  if (filename === "hydrate.js" || filename === "server.js") {
+    return null;
+  }
+
+  // Check if file exists in dist/
+  const chunkPath = join(process.cwd(), "dist", filename);
+  if (existsSync(chunkPath)) {
+    const file = Bun.file(chunkPath);
+    return new Response(file, {
+      headers: { "Content-Type": "application/javascript" },
+    });
+  }
+
+  return null;
+};
+
+/**
  * Try to serve with ISR (cache-aware serving)
  */
 const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
@@ -392,6 +443,12 @@ const serverConfig = {
     "/*": async (req: Request) => {
       const url = new URL(req.url);
       const pathname = url.pathname;
+
+      // Serve code-split chunks (production only)
+      const chunkResponse = serveChunk(pathname);
+      if (chunkResponse) {
+        return chunkResponse;
+      }
 
       // Skip paths handled by other routes (API and static assets)
       // These are handled by their specific route handlers above
@@ -594,6 +651,12 @@ const reloadRoutes = async (): Promise<void> => {
         "/*": async (req) => {
           const url = new URL(req.url);
           const pathname = url.pathname;
+
+          // Serve code-split chunks (production only)
+          const chunkResponse = serveChunk(pathname);
+          if (chunkResponse) {
+            return chunkResponse;
+          }
 
           // Skip paths handled by other routes (API and static assets)
           const skipPaths = [
