@@ -275,7 +275,7 @@ const APITester = clientComponent(() => {
         <div className="flex flex-col gap-2">
           <Label htmlFor="route-select">Select API Route</Label>
           <Select onValueChange={handleRouteChange} value={selectedRoute}>
-            <SelectTrigger id="route-select">
+            <SelectTrigger className="w-full" id="route-select">
               <SelectValue placeholder="Select a route..." />
             </SelectTrigger>
             <SelectContent>

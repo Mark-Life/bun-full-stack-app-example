@@ -134,7 +134,7 @@ export default definePage({
   type: "static",
   loader: async () => {
     // Simulate fetching data at build time
-    const buildTime = new Date().toISOString();
+    const buildTime = await new Date().toISOString();
     const message =
       "This message was generated during the build process. The page is now a static HTML file.";
     return { buildTime, message };

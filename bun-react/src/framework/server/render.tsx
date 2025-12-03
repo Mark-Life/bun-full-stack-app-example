@@ -205,7 +205,19 @@ export const hasClientComponents = (routeInfo: RouteInfo): boolean => {
 };
 
 /**
+ * Check if layout is the root layout (renders <html> via RootShell)
+ * Matches the check in routes-plugin.ts to ensure consistency
+ */
+const isRootLayout = (layoutPath: string): boolean =>
+  layoutPath === "./app/layout.tsx" ||
+  layoutPath === "./src/app/layout.tsx" ||
+  layoutPath === "~/app/layout.tsx" ||
+  layoutPath.endsWith("/app/layout.tsx") ||
+  layoutPath.endsWith("/src/app/layout.tsx");
+
+/**
  * Load layouts for a route
+ * Excludes root layout since it renders <html> tags via RootShell
  */
 const loadLayouts = async (
   routeInfo: RouteInfo
@@ -221,7 +233,12 @@ const loadLayouts = async (
   }> = [];
 
   // Add parent layouts first (root to direct parent)
+  // Exclude root layout - it renders <html> tags via RootShell and is handled separately
   for (const layoutPath of routeInfo.parentLayouts) {
+    // Skip root layout - it renders full HTML document via RootShell
+    if (isRootLayout(layoutPath)) {
+      continue;
+    }
     try {
       const layoutModule = await getLayoutModule(layoutPath);
       const LayoutComponent = layoutModule.default as
@@ -236,7 +253,8 @@ const loadLayouts = async (
   }
 
   // Add direct layout last (closest to the page)
-  if (routeInfo.layoutPath) {
+  // Exclude root layout - it renders <html> tags via RootShell
+  if (routeInfo.layoutPath && !isRootLayout(routeInfo.layoutPath)) {
     try {
       const layoutModule = await getLayoutModule(routeInfo.layoutPath);
       const LayoutComponent = layoutModule.default as
@@ -254,19 +272,45 @@ const loadLayouts = async (
 };
 
 /**
+ * Load root layout (app/layout.tsx) if it exists
+ * Root layout wraps everything in RootShell which renders <html> tags
+ */
+const loadRootLayout = async (): Promise<React.ComponentType<
+  Record<string, unknown>
+> | null> => {
+  // Root layout is always at ~/app/layout.tsx or ./src/app/layout.tsx
+  const rootLayoutPath = "~/app/layout.tsx";
+  try {
+    const layoutModule = await getLayoutModule(rootLayoutPath);
+    return (
+      (layoutModule.default as
+        | React.ComponentType<Record<string, unknown>>
+        | undefined) || null
+    );
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Build component tree with layouts
  * Wraps the tree with SSRRoutePathProvider so client components can access
  * the current route path during server-side rendering (prevents hydration flash)
+ * Also wraps with RootLayout (RootShell) if it exists
  */
-const buildComponentTree = (
+const buildComponentTree = async (
   PageComponent: React.ComponentType<Record<string, unknown>>,
   pageProps: Record<string, unknown>,
   layouts: Array<{
     component: React.ComponentType<Record<string, unknown>>;
     props?: Record<string, unknown>;
   }>,
-  options: { routePath: string; needsHydration: boolean; pageData?: unknown }
-): React.ReactElement => {
+  options: {
+    routePath: string;
+    needsHydration: boolean;
+    pageData?: unknown;
+  }
+): Promise<React.ReactElement> => {
   let component: React.ReactElement = React.createElement(
     PageComponent,
     pageProps
@@ -291,13 +335,30 @@ const buildComponentTree = (
 
   // Wrap with SSRRoutePathProvider so client components can access
   // the current route path during SSR (before hydration completes)
-  return React.createElement(
+  component = React.createElement(
     SSRRoutePathProvider,
     { routePath: options.routePath } as React.ComponentProps<
       typeof SSRRoutePathProvider
     >,
     component
   );
+
+  // Wrap with RootLayout (RootShell) if it exists
+  // RootLayout renders <html> tags and is excluded from hydration component tree
+  const RootLayout = await loadRootLayout();
+  if (RootLayout) {
+    component = React.createElement(
+      RootLayout,
+      {
+        routePath: options.routePath,
+        hasClientComponents: options.needsHydration,
+        ...(options.pageData !== undefined && { pageData: options.pageData }),
+      },
+      component
+    );
+  }
+
+  return component;
 };
 
 /**
@@ -466,14 +527,24 @@ export const renderRouteToString = async (
     }
 
     // Build the component tree
-    const component = buildComponentTree(PageComponent, pageProps, layouts, {
-      routePath: routeInfo.path,
-      needsHydration,
-      pageData: data !== undefined ? data : undefined,
-    });
+    const component = await buildComponentTree(
+      PageComponent,
+      pageProps,
+      layouts,
+      {
+        routePath: routeInfo.path,
+        needsHydration,
+        pageData: data !== undefined ? data : undefined,
+      }
+    );
 
     // Render to string
     const html = renderToString(component);
+
+    // Check if RootShell was rendered (contains <html> tags)
+    // RootShell renders the full HTML document, so we shouldn't wrap it
+    const hasRootShell =
+      html.includes("<html") || html.includes("<!DOCTYPE html>");
 
     // Wrap in full HTML document
     const hydrationScript = needsHydration
@@ -482,6 +553,39 @@ export const renderRouteToString = async (
 
     const hmrScript = getHmrScript();
 
+    // Include route data script for hydration (matches RootShell behavior)
+    // This is required for hydration to work correctly on static pages
+    const routeData = {
+      routePath: routeInfo.path,
+      hasClientComponents: needsHydration,
+      ...(data !== undefined && { pageData: data }),
+    };
+    const routeDataScript = `<script id="__ROUTE_DATA__" type="application/json">${JSON.stringify(routeData)}</script>`;
+
+    // If RootShell was rendered, it already has the full HTML structure
+    // We just need to inject our scripts before the closing </body> tag
+    if (hasRootShell) {
+      // Check if route data script already exists (from RootShell)
+      const hasRouteDataScript = html.includes('id="__ROUTE_DATA__"');
+
+      // Inject scripts before closing </body> tag
+      let finalHtml = html;
+
+      // Add route data script if not present
+      if (!hasRouteDataScript) {
+        finalHtml = finalHtml.replace("</body>", `${routeDataScript}</body>`);
+      }
+
+      // Add hydration and HMR scripts
+      finalHtml = finalHtml.replace(
+        "</body>",
+        `${hydrationScript}${hmrScript}</body>`
+      );
+
+      return finalHtml;
+    }
+
+    // No RootShell - wrap in HTML document structure
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -492,7 +596,7 @@ export const renderRouteToString = async (
 </head>
 <body>
   <div id="root">${html}</div>
-  ${hydrationScript}${hmrScript}
+  ${routeDataScript}${hydrationScript}${hmrScript}
 </body>
 </html>`;
   } catch (error) {
@@ -548,11 +652,16 @@ export const renderRoute = async (
     }
 
     // Build the component tree
-    const component = buildComponentTree(PageComponent, pageProps, layouts, {
-      routePath: routeInfo.path,
-      needsHydration,
-      pageData: pageData !== undefined ? pageData : undefined,
-    });
+    const component = await buildComponentTree(
+      PageComponent,
+      pageProps,
+      layouts,
+      {
+        routePath: routeInfo.path,
+        needsHydration,
+        pageData: pageData !== undefined ? pageData : undefined,
+      }
+    );
 
     // Create AbortController to signal React when the stream is cancelled
     // This allows React to clean up properly when user navigates away
