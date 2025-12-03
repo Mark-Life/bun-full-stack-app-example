@@ -21,13 +21,20 @@ import {
 } from "~/framework/shared/rsc";
 import { renderRoute } from "./render";
 
+/**
+ * Simple logger that only logs in development
+ */
+const isDev = process.env.NODE_ENV !== "production";
+const log = isDev ? console.log : () => {};
+const logError = console.error; // Always log errors
+
 const LAYOUT_FILE = "layout.tsx";
 
 /**
  * Mutable route tree that can be updated during development
  */
 let routeTree = discoverRoutes("./src/app");
-console.log(`📁 Discovered ${routeTree.routes.size} routes`);
+log(`📁 Discovered ${routeTree.routes.size} routes`);
 
 /**
  * Get the route tree
@@ -39,7 +46,7 @@ export const getRouteTree = (): RouteTree => routeTree;
  */
 export const rediscoverRoutes = (): RouteTree => {
   routeTree = discoverRoutes("./src/app");
-  console.log(
+  log(
     `🔄 Rediscovered ${routeTree.routes.size} routes, ${routeTree.routeHandlers.size} route handlers`
   );
   return routeTree;
@@ -175,10 +182,7 @@ const executeRouteHandler = async (
     // If it returns something else, wrap it
     return Response.json(response);
   } catch (error) {
-    console.error(
-      `Error executing route handler ${handlerInfo.filePath}:`,
-      error
-    );
+    logError(`Error executing route handler ${handlerInfo.filePath}:`, error);
     return new Response("Internal server error", { status: 500 });
   }
 };

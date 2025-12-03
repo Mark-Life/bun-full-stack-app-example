@@ -5,6 +5,14 @@ import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 import { SSRRoutePathProvider } from "~/framework/shared/route-context";
 
 /**
+ * Simple logger that only logs in development
+ */
+const isDev = process.env.NODE_ENV !== "production";
+const log = isDev ? console.log : () => {};
+const logError = console.error; // Always log errors
+const logWarn = console.warn; // Always log warnings
+
+/**
  * Resolve import path, converting ~/ alias to actual file path
  * ~/ maps to ./src/ relative to project root
  * Since we're in framework/server/, we need to go up to src/
@@ -75,7 +83,7 @@ const getRouteModule = async (
   }
 
   // Fallback for newly created files not yet in registry
-  console.log(`[HMR] Dynamic import fallback for: ${filePath}`);
+  log(`[HMR] Dynamic import fallback for: ${filePath}`);
   const resolvedPath = resolveImportPath(filePath);
   return await import(resolvedPath);
 };
@@ -93,7 +101,7 @@ const getLayoutModule = async (
   }
 
   // Fallback for newly created files not yet in registry
-  console.log(`[HMR] Dynamic import fallback for layout: ${layoutPath}`);
+  log(`[HMR] Dynamic import fallback for layout: ${layoutPath}`);
   const resolvedPath = resolveImportPath(layoutPath);
   return await import(resolvedPath);
 };
@@ -248,7 +256,7 @@ const loadLayouts = async (
         layouts.push({ component: LayoutComponent });
       }
     } catch (error) {
-      console.warn(`Failed to load layout ${layoutPath}:`, error);
+      logWarn(`Failed to load layout ${layoutPath}:`, error);
     }
   }
 
@@ -264,7 +272,7 @@ const loadLayouts = async (
         layouts.push({ component: LayoutComponent });
       }
     } catch (error) {
-      console.warn(`Failed to load layout ${routeInfo.layoutPath}:`, error);
+      logWarn(`Failed to load layout ${routeInfo.layoutPath}:`, error);
     }
   }
 
@@ -382,7 +390,7 @@ const createStreamErrorHandler = (): ((error: unknown) => void) => {
       }
     }
     // Log actual errors
-    console.error("Error during Suspense streaming:", error);
+    logError("Error during Suspense streaming:", error);
     // Let React handle error boundaries
   };
 };
@@ -600,7 +608,7 @@ export const renderRouteToString = async (
 </body>
 </html>`;
   } catch (error) {
-    console.error(`Error rendering route ${routeInfo.path}:`, error);
+    logError(`Error rendering route ${routeInfo.path}:`, error);
     throw error;
   }
 };
@@ -705,7 +713,7 @@ export const renderRoute = async (
       },
     });
   } catch (error) {
-    console.error(`Error rendering route ${routeInfo.path}:`, error);
+    logError(`Error rendering route ${routeInfo.path}:`, error);
     return new Response(
       `Error rendering route: ${
         error instanceof Error ? error.message : String(error)
