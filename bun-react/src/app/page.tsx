@@ -202,12 +202,11 @@ const LandingPage = () => (
         Bun React Framework
       </h1>
       <p className="mx-auto mb-6 max-w-2xl text-lg text-muted-foreground sm:mb-8 sm:text-xl md:text-2xl">
-        Next.js features. Bun speed. Zero config.
+        Next.js features. Bun speed.
       </p>
       <p className="mx-auto mb-8 max-w-3xl text-muted-foreground text-sm sm:mb-10 sm:text-base md:mb-12">
         A full-stack React framework built on Bun. Get SSR, static generation,
-        ISR, client-side navigation, and typesafe APIs—all with a smaller bundle
-        size and faster performance.
+        ISR, client-side navigation, and typesafe APIs—all.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
         <Button asChild size="lg">
@@ -215,6 +214,15 @@ const LandingPage = () => (
         </Button>
         <Button asChild size="lg" variant="outline">
           <a href="#demos">View Demos</a>
+        </Button>
+        <Button asChild size="lg" variant="outline">
+          <a
+            href="https://github.com/Mark-Life/bun-full-stack-app-example"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            GitHub
+          </a>
         </Button>
       </div>
     </section>
@@ -369,6 +377,14 @@ const LandingPage = () => (
           >
             Documentation
           </Link>
+          <a
+            className="text-muted-foreground text-xs hover:text-foreground hover:underline sm:text-sm"
+            href="https://github.com/Mark-Life/bun-full-stack-app-example"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            GitHub
+          </a>
         </div>
       </div>
     </footer>
