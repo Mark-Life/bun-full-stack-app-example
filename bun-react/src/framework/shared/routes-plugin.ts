@@ -7,6 +7,7 @@ import type { ComponentType } from "./rsc";
 // Regex patterns defined at top level for performance
 const VIRTUAL_ROUTES_FILTER = /^virtual:routes$/;
 const VIRTUAL_ROUTES_LOAD_FILTER = /.*/;
+const SRC_IMPORT_FILTER = /^\.\/src\//;
 const ALIAS_PREFIX_REGEX = /^~\//;
 const SRC_APP_PREFIX_REGEX = /^\.\/src\/app\//;
 const APP_PREFIX_REGEX = /^\.\/app\//;
@@ -315,6 +316,33 @@ export const routesPlugin: BunPlugin = {
       path: "virtual:routes",
       namespace: "virtual-routes",
     }));
+
+    // Intercept imports starting with ./src/ and resolve them relative to process.cwd()
+    // This ensures paths resolve correctly even when working directory is different
+    build.onResolve({ filter: SRC_IMPORT_FILTER }, (args) => {
+      const cwd = process.cwd();
+      const resolvedPath = join(cwd, args.path);
+
+      // If file exists as-is, return it
+      if (existsSync(resolvedPath)) {
+        return { path: resolvedPath };
+      }
+
+      // Try adding .tsx extension
+      const withTsxExt = `${resolvedPath}.tsx`;
+      if (existsSync(withTsxExt)) {
+        return { path: withTsxExt };
+      }
+
+      // Try adding .ts extension
+      const withTsExt = `${resolvedPath}.ts`;
+      if (existsSync(withTsExt)) {
+        return { path: withTsExt };
+      }
+
+      // Return original path - let Bun handle the error
+      return { path: resolvedPath };
+    });
 
     // Generate the routes module when virtual:routes is loaded
     build.onLoad(
