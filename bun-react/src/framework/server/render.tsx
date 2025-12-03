@@ -18,6 +18,86 @@ const resolveImportPath = (importPath: string): string => {
 };
 
 /**
+ * Lazy-load route modules registry (handles case where file doesn't exist yet)
+ */
+let routeModulesCache: Map<string, { default: unknown }> | null = null;
+let layoutModulesCache: Map<string, { default: unknown }> | null = null;
+
+/**
+ * Clear module caches - call this when routes are reloaded
+ * This ensures fresh modules are loaded after changes
+ */
+export const clearModuleCache = (): void => {
+  routeModulesCache = null;
+  layoutModulesCache = null;
+};
+
+const getRouteModules = async (): Promise<
+  Map<string, { default: unknown }>
+> => {
+  if (routeModulesCache) {
+    return routeModulesCache;
+  }
+  try {
+    const module = await import("./route-modules.generated");
+    routeModulesCache = module.routeModules;
+    layoutModulesCache = module.layoutModules;
+    return routeModulesCache;
+  } catch {
+    // File doesn't exist yet - return empty map, fallback to dynamic import
+    return new Map();
+  }
+};
+
+const getLayoutModules = async (): Promise<
+  Map<string, { default: unknown }>
+> => {
+  if (layoutModulesCache) {
+    return layoutModulesCache;
+  }
+  await getRouteModules(); // This will populate both caches
+  return layoutModulesCache || new Map();
+};
+
+/**
+ * Get route module from registry, fallback to dynamic import for newly created files
+ * This handles the brief window between file creation and registry regeneration
+ */
+const getRouteModule = async (
+  filePath: string
+): Promise<{ default: unknown }> => {
+  // Try static registry first (Bun --hot tracks these)
+  const routeModules = await getRouteModules();
+  const cached = routeModules.get(filePath);
+  if (cached) {
+    return cached;
+  }
+
+  // Fallback for newly created files not yet in registry
+  console.log(`[HMR] Dynamic import fallback for: ${filePath}`);
+  const resolvedPath = resolveImportPath(filePath);
+  return await import(resolvedPath);
+};
+
+/**
+ * Get layout module from registry, fallback to dynamic import for newly created files
+ */
+const getLayoutModule = async (
+  layoutPath: string
+): Promise<{ default: unknown }> => {
+  const layoutModules = await getLayoutModules();
+  const cached = layoutModules.get(layoutPath);
+  if (cached) {
+    return cached;
+  }
+
+  // Fallback for newly created files not yet in registry
+  console.log(`[HMR] Dynamic import fallback for layout: ${layoutPath}`);
+  const resolvedPath = resolveImportPath(layoutPath);
+  return await import(resolvedPath);
+};
+
+/**
  * HMR client script (dev mode only)
  */
 const getHmrScript = (): string => {
@@ -31,6 +111,7 @@ const getHmrScript = (): string => {
         
         let ws;
         let reconnectTimeout;
+        let wasConnected = false;
         
         const connectHMR = () => {
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -42,6 +123,13 @@ const getHmrScript = (): string => {
               clearTimeout(reconnectTimeout);
               reconnectTimeout = null;
             }
+            // If we were connected before, server restarted - reload page
+            if (wasConnected) {
+              console.log('[HMR] Server restarted, reloading...');
+              window.location.reload();
+              return;
+            }
+            wasConnected = true;
           };
           
           ws.onmessage = (event) => {
@@ -50,7 +138,7 @@ const getHmrScript = (): string => {
               if (message.type === 'hmr-update') {
                 console.log('[HMR] File changed:', message.file);
                 
-                // Reload CSS files
+                // Hot-swap CSS files without page reload
                 if (message.file.endsWith('.css')) {
                   const links = document.querySelectorAll('link[rel="stylesheet"]');
                   links.forEach(link => {
@@ -61,7 +149,7 @@ const getHmrScript = (): string => {
                     }
                   });
                 } else {
-                  // Reload page for JS/TS/HTML/route changes
+                  // Reload page for JS/TS/route changes
                   window.location.reload();
                 }
               }
@@ -134,9 +222,10 @@ const loadLayouts = async (
   // Add parent layouts first (root to direct parent)
   for (const layoutPath of routeInfo.parentLayouts) {
     try {
-      const resolvedLayoutPath = resolveImportPath(layoutPath);
-      const layoutModule = await import(resolvedLayoutPath);
-      const LayoutComponent = layoutModule.default;
+      const layoutModule = await getLayoutModule(layoutPath);
+      const LayoutComponent = layoutModule.default as
+        | React.ComponentType<Record<string, unknown>>
+        | undefined;
       if (LayoutComponent) {
         layouts.push({ component: LayoutComponent });
       }
@@ -148,9 +237,10 @@ const loadLayouts = async (
   // Add direct layout last (closest to the page)
   if (routeInfo.layoutPath) {
     try {
-      const resolvedLayoutPath = resolveImportPath(routeInfo.layoutPath);
-      const layoutModule = await import(resolvedLayoutPath);
-      const LayoutComponent = layoutModule.default;
+      const layoutModule = await getLayoutModule(routeInfo.layoutPath);
+      const LayoutComponent = layoutModule.default as
+        | React.ComponentType<Record<string, unknown>>
+        | undefined;
       if (LayoutComponent) {
         layouts.push({ component: LayoutComponent });
       }
@@ -334,14 +424,19 @@ export const renderRouteToString = async (
   params: Record<string, string> = {}
 ): Promise<string> => {
   try {
-    // Import the page component
-    const resolvedPagePath = resolveImportPath(routeInfo.filePath);
-    const pageModule = await import(resolvedPagePath);
-    const PageComponent = pageModule.default;
+    // Import the page component from registry
+    const pageModule = await getRouteModule(routeInfo.filePath);
+    const PageComponentRaw = pageModule.default as
+      | React.ComponentType<Record<string, unknown>>
+      | undefined;
 
-    if (!PageComponent) {
+    if (!PageComponentRaw) {
       throw new Error(`No default export found in ${routeInfo.filePath}`);
     }
+
+    // TypeScript now knows PageComponent is defined
+    const PageComponent: React.ComponentType<Record<string, unknown>> =
+      PageComponentRaw;
 
     // Load layouts
     const layouts = await loadLayouts(routeInfo);
@@ -402,14 +497,19 @@ export const renderRoute = async (
   params: Record<string, string> = {}
 ): Promise<Response> => {
   try {
-    // Import the page component
-    const resolvedPagePath = resolveImportPath(routeInfo.filePath);
-    const pageModule = await import(resolvedPagePath);
-    const PageComponent = pageModule.default;
+    // Import the page component from registry
+    const pageModule = await getRouteModule(routeInfo.filePath);
+    const PageComponentRaw = pageModule.default as
+      | React.ComponentType<Record<string, unknown>>
+      | undefined;
 
-    if (!PageComponent) {
+    if (!PageComponentRaw) {
       throw new Error(`No default export found in ${routeInfo.filePath}`);
     }
+
+    // TypeScript now knows PageComponent is defined
+    const PageComponent: React.ComponentType<Record<string, unknown>> =
+      PageComponentRaw;
 
     // Check if page has loader (for dynamic routes with data fetching)
     let pageData: unknown;

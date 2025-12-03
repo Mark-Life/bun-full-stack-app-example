@@ -80,6 +80,7 @@ export const RootShell = ({
         
         let ws;
         let reconnectTimeout;
+        let wasConnected = false;
         
         const connectHMR = () => {
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -91,6 +92,13 @@ export const RootShell = ({
               clearTimeout(reconnectTimeout);
               reconnectTimeout = null;
             }
+            // If we were connected before, server restarted - reload page
+            if (wasConnected) {
+              console.log('[HMR] Server restarted, reloading...');
+              window.location.reload();
+              return;
+            }
+            wasConnected = true;
           };
           
           ws.onmessage = (event) => {
@@ -99,7 +107,7 @@ export const RootShell = ({
               if (message.type === 'hmr-update') {
                 console.log('[HMR] File changed:', message.file);
                 
-                // Reload CSS files
+                // Hot-swap CSS files without page reload
                 if (message.file.endsWith('.css')) {
                   const links = document.querySelectorAll('link[rel="stylesheet"]');
                   links.forEach(link => {
@@ -110,7 +118,7 @@ export const RootShell = ({
                     }
                   });
                 } else {
-                  // Reload page for JS/TS/HTML/route changes
+                  // Reload page for JS/TS/route changes
                   window.location.reload();
                 }
               }

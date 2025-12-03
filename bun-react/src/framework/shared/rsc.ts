@@ -32,6 +32,8 @@ export type ClientComponent<P = Record<string, unknown>> =
 
 /**
  * Type-safe wrapper to mark a component as client-side
+ * Components render fully on server (SSR) with initial hook values.
+ * Then hydrate on client for interactivity.
  * Usage: export const MyComponent = clientComponent((props) => { ... });
  */
 export const clientComponent = <P = Record<string, unknown>>(

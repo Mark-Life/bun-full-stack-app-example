@@ -14,7 +14,85 @@ import {
   SystemThemeWrapper,
 } from "@/components/ui/code-block";
 import { definePage } from "~/framework/shared/page";
-import { clientComponent } from "~/framework/shared/rsc";
+
+// Code snippets for examples
+const staticPageCode = `definePage({
+  type: 'static',
+  loader: async () => ({
+    data: await fetchData()
+  }),
+  component: ({ data }) => (
+    <div>{data.title}</div>
+  )
+})`;
+
+const clientComponentCode = `// Using clientComponent() wrapper:
+export const Counter = 
+  clientComponent(() => {
+    const [count, setCount] = 0
+    return (
+      <button onClick={() => 
+        setCount(c => c + 1)}>
+        {count}
+      </button>
+    )
+  })
+
+// Or using "use client" at top of file:
+"use client";
+export const Counter = () => { ... }`;
+
+const clientNavCode = `defineLayout({
+  clientNavigation: true,
+  component: ({ children }) => (
+    <nav>...</nav>
+    {children}
+  )
+})`;
+
+/**
+ * Code examples section with syntax highlighting
+ */
+const CodeExamples = () => (
+  <div className="grid gap-6 md:grid-cols-3">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Static Pages</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={staticPageCode} language="typescript">
+            <CodeBlockCopyButton code={staticPageCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Client Components</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={clientComponentCode} language="tsx">
+            <CodeBlockCopyButton code={clientComponentCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Client Navigation</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={clientNavCode} language="tsx">
+            <CodeBlockCopyButton code={clientNavCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+  </div>
+);
 
 /**
  * Displays a feature item with status indicator (done/planned)
@@ -90,7 +168,7 @@ const demoFeatures = [
   },
 ] as const;
 
-const LandingPage = clientComponent(() => (
+const LandingPage = () => (
   <div className="min-h-screen bg-background">
     {/* Hero Section */}
     <section className="container relative z-10 mx-auto px-4 py-16 text-center md:py-24">
@@ -252,81 +330,7 @@ const LandingPage = clientComponent(() => (
           experience.
         </p>
       </div>
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Static Pages</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SystemThemeWrapper>
-              <CodeBlock
-                code={`definePage({
-  type: 'static',
-  loader: async () => ({
-    data: await fetchData()
-  }),
-  component: ({ data }) => (
-    <div>{data.title}</div>
-  )
-})`}
-                language="typescript"
-              >
-                <CodeBlockCopyButton />
-              </CodeBlock>
-            </SystemThemeWrapper>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Client Components</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SystemThemeWrapper>
-              <CodeBlock
-                code={`// Using clientComponent() wrapper:
-export const Counter = 
-  clientComponent(() => {
-    const [count, setCount] = 0
-    return (
-      <button onClick={() => 
-        setCount(c => c + 1)}>
-        {count}
-      </button>
-    )
-  })
-
-// Or using "use client" at top of file (shadcn/ui style):
-"use client";
-export const Counter = () => { ... }`}
-                language="tsx"
-              >
-                <CodeBlockCopyButton />
-              </CodeBlock>
-            </SystemThemeWrapper>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Client Navigation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SystemThemeWrapper>
-              <CodeBlock
-                code={`defineLayout({
-      clientNavigation: true,
-      component: ({ children }) => (
-        <nav>...</nav>
-        {children}
-      )
-    })`}
-                language="tsx"
-              >
-                <CodeBlockCopyButton />
-              </CodeBlock>
-            </SystemThemeWrapper>
-          </CardContent>
-        </Card>
-      </div>
+      <CodeExamples />
     </section>
 
     {/* Footer */}
@@ -346,7 +350,7 @@ export const Counter = () => { ... }`}
       </div>
     </footer>
   </div>
-));
+);
 
 export default definePage({
   type: "static",

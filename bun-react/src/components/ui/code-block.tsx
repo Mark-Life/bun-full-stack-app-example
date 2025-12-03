@@ -3,11 +3,9 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import {
   type ComponentProps,
-  createContext,
   type HTMLAttributes,
-  useContext,
+  type ReactNode,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { type BundledLanguage, codeToHtml, type ShikiTransformer } from "shiki";
@@ -18,15 +16,8 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  children?: ReactNode;
 };
-
-type CodeBlockContextType = {
-  code: string;
-};
-
-const CodeBlockContext = createContext<CodeBlockContextType>({
-  code: "",
-});
 
 const lineNumberTransformer: ShikiTransformer = {
   name: "line-numbers",
@@ -72,6 +63,10 @@ export async function highlightCode(
   ]);
 }
 
+/**
+ * Code block component with syntax highlighting.
+ * Shows raw code during SSR, highlights on client.
+ */
 export const CodeBlock = ({
   code,
   language,
@@ -80,62 +75,73 @@ export const CodeBlock = ({
   children,
   ...props
 }: CodeBlockProps) => {
-  const [html, setHtml] = useState<string>("");
+  const [lightHtml, setLightHtml] = useState<string>("");
   const [darkHtml, setDarkHtml] = useState<string>("");
-  const mounted = useRef(false);
+  const [isHighlighted, setIsHighlighted] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     highlightCode(code, language, showLineNumbers).then(([light, dark]) => {
-      if (!mounted.current) {
-        setHtml(light);
+      if (!cancelled) {
+        setLightHtml(light);
         setDarkHtml(dark);
-        mounted.current = true;
+        setIsHighlighted(true);
       }
     });
-
     return () => {
-      mounted.current = false;
+      cancelled = true;
     };
   }, [code, language, showLineNumbers]);
 
   return (
-    <CodeBlockContext.Provider value={{ code }}>
-      <div
-        className={cn(
-          "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
-          className
+    <div
+      className={cn(
+        "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
+        className
+      )}
+      {...props}
+    >
+      <div className="relative">
+        {isHighlighted ? (
+          <>
+            <div
+              className="overflow-hidden dark:hidden [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for Shiki HTML output
+              dangerouslySetInnerHTML={{ __html: lightHtml }}
+            />
+            <div
+              className="hidden overflow-hidden dark:block [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for Shiki HTML output
+              dangerouslySetInnerHTML={{ __html: darkHtml }}
+            />
+          </>
+        ) : (
+          <pre className="m-0 overflow-auto bg-background p-4 text-foreground text-sm">
+            <code className="font-mono text-sm">{code}</code>
+          </pre>
         )}
-        {...props}
-      >
-        <div className="relative">
-          <div
-            className="overflow-hidden dark:hidden [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-          <div
-            className="hidden overflow-hidden dark:block [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
-            dangerouslySetInnerHTML={{ __html: darkHtml }}
-          />
-          {children && (
-            <div className="absolute top-2 right-2 flex items-center gap-2">
-              {children}
-            </div>
-          )}
-        </div>
+        {children && (
+          <div className="absolute top-2 right-2 flex items-center gap-2">
+            {children}
+          </div>
+        )}
       </div>
-    </CodeBlockContext.Provider>
+    </div>
   );
 };
 
 export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
+  code: string;
   onCopy?: () => void;
   onError?: (error: Error) => void;
   timeout?: number;
 };
 
+/**
+ * Button for copying code to clipboard.
+ */
 export const CodeBlockCopyButton = ({
+  code,
   onCopy,
   onError,
   timeout = 2000,
@@ -144,7 +150,6 @@ export const CodeBlockCopyButton = ({
   ...props
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
-  const { code } = useContext(CodeBlockContext);
 
   const copyToClipboard = async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -178,7 +183,7 @@ export const CodeBlockCopyButton = ({
 };
 
 /**
- * Wrapper component that detects system theme preference and applies it
+ * Wrapper component that detects system theme preference and applies it.
  */
 export const SystemThemeWrapper = ({
   children,
