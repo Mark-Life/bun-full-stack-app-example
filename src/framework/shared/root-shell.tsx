@@ -64,6 +64,8 @@ interface RootShellProps {
   pageData?: unknown;
   /** Whether this route is static (for caching serialized route data) */
   isStatic?: boolean;
+  /** Whether to preload hydration script (for faster TTI) */
+  preloadHydration?: boolean;
 }
 
 export const RootShell = ({
@@ -73,6 +75,7 @@ export const RootShell = ({
   hasClientComponents = true,
   pageData,
   isStatic = false,
+  preloadHydration = true,
 }: RootShellProps) => {
   const title = metadata?.title || "Bun + React";
   const description =
@@ -90,6 +93,9 @@ export const RootShell = ({
   // Cache serialized route data for static routes
   const serializedRouteData = serializeRouteData(routeData, isStatic);
 
+  // Determine if we should preload hydration script
+  const shouldPreloadHydration = preloadHydration && hasClientComponents;
+
   return (
     <html lang="en">
       <head>
@@ -99,6 +105,10 @@ export const RootShell = ({
         <title>{title}</title>
         <link href="/logo.svg" rel="icon" type="image/svg+xml" />
         <link href="/index.css" rel="stylesheet" />
+        {/* Preload hydration script for faster Time to Interactive */}
+        {shouldPreloadHydration ? (
+          <link href="/hydrate.js" rel="modulepreload" />
+        ) : null}
       </head>
       <body>
         <div id="root">{children}</div>

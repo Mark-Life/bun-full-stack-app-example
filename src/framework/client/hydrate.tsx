@@ -16,9 +16,18 @@ import {
   RouterProvider,
 } from "./router";
 
+// Logger that only logs in development
+const isDev = process.env.NODE_ENV !== "production";
+// biome-ignore lint/suspicious/noEmptyBlockStatements: empty function is intentional for production
+const log = isDev ? console.log : () => {};
+// biome-ignore lint/suspicious/noEmptyBlockStatements: empty function is intentional for production
+const logError = isDev ? console.error : () => {};
+// biome-ignore lint/suspicious/noEmptyBlockStatements: empty function is intentional for production
+const logWarn = isDev ? console.warn : () => {};
+
 // Validate routes are loaded
 if (!routes || Object.keys(routes).length === 0) {
-  console.error("No routes found! Routes object:", routes);
+  logError("No routes found! Routes object:", routes);
 }
 
 // Regex patterns defined at top level for performance
@@ -198,7 +207,7 @@ const needsHydration = (route: RouteConfig): boolean => {
 const hydrate = () => {
   const root = document.getElementById("root");
   if (!root) {
-    console.error("Root element not found");
+    logError("Root element not found");
     return;
   }
 
@@ -206,12 +215,12 @@ const hydrate = () => {
   const matchResult = matchClientRoute(routePath, routes);
 
   if (!matchResult) {
-    console.error(`Route not found: ${routePath}`);
-    console.error("Available routes:", Object.keys(routes));
+    logError(`Route not found: ${routePath}`);
+    logError("Available routes:", Object.keys(routes));
     // Fallback to home page if available
     const homeRoute = routes["/"];
     if (homeRoute) {
-      console.warn("Falling back to home page");
+      logWarn("Falling back to home page");
       hydrateRoute(homeRoute, {}, root, pageData);
       return;
     }
@@ -222,7 +231,7 @@ const hydrate = () => {
   // For server component pages with async components, we can't hydrate because
   // async components can't run on the client. Skip hydration if no client components.
   if (!(needsHydration(matchResult.route) || hasClientComponents)) {
-    console.log(
+    log(
       `[RSC] Route "${routePath}" is a pure server component - no hydration needed`
     );
     return;
@@ -254,9 +263,7 @@ const hydrateRoute = (
   const ParentLayouts = route.parentLayouts || [];
 
   if (route.componentType === "server") {
-    console.log(
-      "[RSC] Server component page - hydrating for client boundaries"
-    );
+    log("[RSC] Server component page - hydrating for client boundaries");
   }
 
   // Build component tree with layouts
