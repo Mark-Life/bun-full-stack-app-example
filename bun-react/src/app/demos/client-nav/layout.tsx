@@ -8,49 +8,43 @@ import { defineLayout } from "~/framework/shared/layout";
 export default defineLayout({
   clientNavigation: true,
   component: ({ children }) => (
-    <div className="min-h-screen bg-background">
-      <nav className="border-b bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4">
-          <div className="flex h-16 items-center justify-between">
-            <h1 className="font-bold text-foreground text-xl">
-              Client Navigation Demo
-            </h1>
-            <div className="flex gap-4">
-              <Link
-                className="text-muted-foreground hover:text-foreground hover:underline"
-                href="/demos/client-nav"
-              >
-                Home
-              </Link>
-              <Link
-                className="text-muted-foreground hover:text-foreground hover:underline"
-                href="/demos/client-nav/settings"
-              >
-                Settings
-              </Link>
-              <Link
-                className="text-muted-foreground hover:text-foreground hover:underline"
-                href="/demos/client-nav/profile"
-              >
-                Profile
-              </Link>
-              <Link
-                className="text-muted-foreground hover:text-foreground hover:underline"
-                href="/demos/client-nav/analytics"
-              >
-                Analytics
-              </Link>
-              <Link
-                className="text-primary hover:text-primary/80 hover:underline"
-                href="/"
-              >
-                Back to Home
-              </Link>
-            </div>
-          </div>
+    <div className="flex min-h-screen bg-background">
+      {/* Sidebar */}
+      <aside className="w-56 shrink-0 border-r bg-card">
+        <div className="flex h-full flex-col p-4">
+          <h2 className="mb-4 font-semibold text-muted-foreground text-sm uppercase tracking-wider">
+            Client Navigation
+          </h2>
+          <nav className="flex flex-1 flex-col gap-2">
+            <Link
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+              href="/demos/client-nav"
+            >
+              Home
+            </Link>
+            <Link
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+              href="/demos/client-nav/settings"
+            >
+              Settings
+            </Link>
+            <Link
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+              href="/demos/client-nav/profile"
+            >
+              Profile
+            </Link>
+            <Link
+              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+              href="/demos/client-nav/analytics"
+            >
+              Analytics
+            </Link>
+          </nav>
         </div>
-      </nav>
-      <main className="mx-auto max-w-7xl p-8">{children}</main>
+      </aside>
+      {/* Main content */}
+      <main className="flex-1 p-8">{children}</main>
     </div>
   ),
 });
