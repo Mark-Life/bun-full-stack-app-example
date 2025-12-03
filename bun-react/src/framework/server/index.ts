@@ -16,6 +16,7 @@ import { queueRevalidation } from "./revalidate";
 import {
   getNotFoundRouteInfo,
   getRouteTree,
+  matchAndExecuteRouteHandler,
   matchAndRenderRoute,
   rediscoverRoutes,
 } from "./routes";
@@ -280,6 +281,15 @@ const serverConfig = {
       if (skipPaths.some((p) => pathname.startsWith(p))) {
         // Let other handlers deal with these
         return new Response("Not found", { status: 404 });
+      }
+
+      // Try route handler first (route.ts files take precedence over page.tsx)
+      const routeHandlerResponse = await matchAndExecuteRouteHandler(
+        pathname,
+        req
+      );
+      if (routeHandlerResponse) {
+        return routeHandlerResponse;
       }
 
       // Try ISR-aware serving (cache-first, then pre-rendered, then SSR)

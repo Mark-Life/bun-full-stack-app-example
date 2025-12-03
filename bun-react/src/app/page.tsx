@@ -13,6 +13,7 @@ import {
   CodeBlockCopyButton,
   SystemThemeWrapper,
 } from "@/components/ui/code-block";
+import { cn } from "@/lib/utils";
 import { definePage } from "~/framework/shared/page";
 
 // Code snippets for examples
@@ -54,10 +55,10 @@ const clientNavCode = `defineLayout({
  * Code examples section with syntax highlighting
  */
 const CodeExamples = () => (
-  <div className="grid gap-6 md:grid-cols-3">
+  <div className="grid gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Static Pages</CardTitle>
+        <CardTitle className="text-base sm:text-lg">Static Pages</CardTitle>
       </CardHeader>
       <CardContent>
         <SystemThemeWrapper>
@@ -69,7 +70,9 @@ const CodeExamples = () => (
     </Card>
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Client Components</CardTitle>
+        <CardTitle className="text-base sm:text-lg">
+          Client Components
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <SystemThemeWrapper>
@@ -81,7 +84,9 @@ const CodeExamples = () => (
     </Card>
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Client Navigation</CardTitle>
+        <CardTitle className="text-base sm:text-lg">
+          Client Navigation
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <SystemThemeWrapper>
@@ -105,7 +110,12 @@ const FeatureItem = ({
   status: "done" | "planned";
 }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className={status === "planned" ? "text-muted-foreground" : ""}>
+    <span
+      className={cn(
+        "wrap-break-word flex-1",
+        status === "planned" ? "text-muted-foreground" : ""
+      )}
+    >
       {children}
     </span>
     {status === "done" ? (
@@ -171,35 +181,35 @@ const demoFeatures = [
 const LandingPage = () => (
   <div className="min-h-screen bg-background">
     {/* Hero Section */}
-    <section className="container relative z-10 mx-auto px-4 py-16 text-center md:py-24">
-      <div className="mb-8 flex items-center justify-center gap-8">
+    <section className="container relative z-10 mx-auto px-4 py-12 text-center sm:px-6 sm:py-16 md:py-24">
+      <div className="mb-6 flex items-center justify-center gap-4 sm:mb-8 sm:gap-6 md:gap-8">
         <img
           alt="Bun Logo"
-          className="h-32 scale-110 p-6 transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_2em_#646cffaa] md:h-40"
+          className="h-20 scale-110 p-3 transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_2em_#646cffaa] sm:h-28 sm:p-4 md:h-32 md:p-6 lg:h-40"
           height={160}
           src="/logo.svg"
           width={160}
         />
         <img
           alt="React Logo"
-          className="h-32 animate-[spin_20s_linear_infinite] p-6 transition-all duration-300 hover:scale-110 hover:drop-shadow-[0_0_2em_#61dafbaa] md:h-40"
+          className="h-20 animate-[spin_20s_linear_infinite] p-3 transition-all duration-300 hover:scale-110 hover:drop-shadow-[0_0_2em_#61dafbaa] sm:h-28 sm:p-4 md:h-32 md:p-6 lg:h-40"
           height={160}
           src="/react.svg"
           width={160}
         />
       </div>
-      <h1 className="mb-4 font-bold text-5xl tracking-tight md:text-6xl lg:text-7xl">
+      <h1 className="mb-4 font-bold text-4xl tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
         Bun React Framework
       </h1>
-      <p className="mx-auto mb-8 max-w-2xl text-muted-foreground text-xl md:text-2xl">
+      <p className="mx-auto mb-6 max-w-2xl text-lg text-muted-foreground sm:mb-8 sm:text-xl md:text-2xl">
         Next.js features. Bun speed. Zero config.
       </p>
-      <p className="mx-auto mb-12 max-w-3xl text-muted-foreground">
+      <p className="mx-auto mb-8 max-w-3xl text-muted-foreground text-sm sm:mb-10 sm:text-base md:mb-12">
         A full-stack React framework built on Bun. Get SSR, static generation,
         ISR, client-side navigation, and typesafe APIs—all with a smaller bundle
         size and faster performance.
       </p>
-      <div className="flex flex-wrap items-center justify-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
         <Button asChild size="lg">
           <Link href="/docs">Read Docs</Link>
         </Button>
@@ -210,22 +220,31 @@ const LandingPage = () => (
     </section>
 
     {/* Demo Cards Section */}
-    <section className="container mx-auto px-4 py-16" id="demos">
-      <div className="mb-12 text-center">
-        <h2 className="mb-4 font-bold text-4xl">Feature Demos</h2>
-        <p className="mx-auto max-w-2xl text-muted-foreground">
+    <section
+      className="container mx-auto px-4 py-12 sm:px-6 sm:py-16"
+      id="demos"
+    >
+      <div className="mb-8 text-center sm:mb-12">
+        <h2 className="mb-3 font-bold text-3xl sm:mb-4 sm:text-4xl">
+          Feature Demos
+        </h2>
+        <p className="mx-auto max-w-2xl text-muted-foreground text-sm sm:text-base">
           Explore each feature with interactive examples. Click any card to see
           it in action.
         </p>
       </div>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
         {demoFeatures.map((feature) => (
           <Link href={feature.href} key={feature.href}>
             <Card className="h-full cursor-pointer shadow-primary-hover transition-all duration-200">
               <CardHeader>
-                <div className="mb-2 text-4xl">{feature.icon}</div>
-                <CardTitle className="text-xl">{feature.title}</CardTitle>
-                <CardDescription>{feature.description}</CardDescription>
+                <div className="mb-2 text-3xl sm:text-4xl">{feature.icon}</div>
+                <CardTitle className="text-lg sm:text-xl">
+                  {feature.title}
+                </CardTitle>
+                <CardDescription className="text-sm sm:text-base">
+                  {feature.description}
+                </CardDescription>
               </CardHeader>
             </Card>
           </Link>
@@ -234,24 +253,26 @@ const LandingPage = () => (
     </section>
 
     {/* Framework Features Section */}
-    <section className="container mx-auto px-4 py-16">
-      <div className="mb-12 text-center">
-        <h2 className="mb-4 font-bold text-4xl">Framework Features</h2>
-        <p className="mx-auto max-w-2xl text-muted-foreground">
+    <section className="container mx-auto px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mb-8 text-center sm:mb-12">
+        <h2 className="mb-3 font-bold text-3xl sm:mb-4 sm:text-4xl">
+          Framework Features
+        </h2>
+        <p className="mx-auto max-w-2xl text-muted-foreground text-sm sm:text-base">
           Next.js App Router patterns with Bun performance. See what's supported
           and what's coming.
         </p>
       </div>
-      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 md:gap-8 xl:grid-cols-4">
         {/* File-Based Routing */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <span className="text-2xl">📁</span>
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <span className="text-xl sm:text-2xl">📁</span>
               File-Based Routing
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-2 text-xs sm:text-sm">
             <FeatureItem status="done">page.tsx / index.tsx</FeatureItem>
             <FeatureItem status="done">layout.tsx (nested)</FeatureItem>
             <FeatureItem status="done">not-found.tsx</FeatureItem>
@@ -264,12 +285,12 @@ const LandingPage = () => (
         {/* Rendering Strategies */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <span className="text-2xl">🎨</span>
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <span className="text-xl sm:text-2xl">🎨</span>
               Rendering Strategies
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-2 text-xs sm:text-sm">
             <FeatureItem status="done">Server-Side Rendering</FeatureItem>
             <FeatureItem status="done">Static Generation (SSG)</FeatureItem>
             <FeatureItem status="done">
@@ -286,12 +307,12 @@ const LandingPage = () => (
         {/* Components & Data */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <span className="text-2xl">⚛️</span>
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <span className="text-xl sm:text-2xl">⚛️</span>
               Components & Data
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-2 text-xs sm:text-sm">
             <FeatureItem status="done">Server Components (default)</FeatureItem>
             <FeatureItem status="done">Client Components</FeatureItem>
             <FeatureItem status="done">loader() data fetching</FeatureItem>
@@ -304,12 +325,12 @@ const LandingPage = () => (
         {/* API & Infrastructure */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <span className="text-2xl">🔧</span>
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <span className="text-xl sm:text-2xl">🔧</span>
               API & Infrastructure
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-2 text-xs sm:text-sm">
             <FeatureItem status="done">Typesafe API Routes</FeatureItem>
             <FeatureItem status="done">Zod Validation</FeatureItem>
             <FeatureItem status="done">Middleware</FeatureItem>
@@ -322,10 +343,12 @@ const LandingPage = () => (
     </section>
 
     {/* Code Examples Section */}
-    <section className="container mx-auto px-4 py-16">
-      <div className="mb-12 text-center">
-        <h2 className="mb-4 font-bold text-4xl">Simple API</h2>
-        <p className="mx-auto max-w-2xl text-muted-foreground">
+    <section className="container mx-auto px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mb-8 text-center sm:mb-12">
+        <h2 className="mb-3 font-bold text-3xl sm:mb-4 sm:text-4xl">
+          Simple API
+        </h2>
+        <p className="mx-auto max-w-2xl text-muted-foreground text-sm sm:text-base">
           Clean, intuitive APIs that feel familiar. Built for developer
           experience.
         </p>
@@ -334,14 +357,14 @@ const LandingPage = () => (
     </section>
 
     {/* Footer */}
-    <footer className="container mx-auto border-t px-4 py-12">
-      <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
-        <p className="text-muted-foreground text-sm">
+    <footer className="container mx-auto border-t px-4 py-8 sm:px-6 sm:py-12">
+      <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
+        <p className="text-muted-foreground text-xs sm:text-sm">
           Built with Bun and React. Open source.
         </p>
         <div className="flex gap-4">
           <Link
-            className="text-muted-foreground text-sm hover:text-foreground hover:underline"
+            className="text-muted-foreground text-xs hover:text-foreground hover:underline sm:text-sm"
             href="/docs"
           >
             Documentation

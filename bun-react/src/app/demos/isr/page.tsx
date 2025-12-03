@@ -94,13 +94,17 @@ export default definePage({
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => (
-              <Link href={`/demos/isr/${product.id}`} key={product.id}>
-                <Card className="transition-shadow hover:shadow-lg">
+              <Link
+                className="h-full"
+                href={`/demos/isr/${product.id}`}
+                key={product.id}
+              >
+                <Card className="flex h-full flex-col transition-shadow hover:shadow-lg">
                   <CardHeader>
                     <CardTitle>{product.name}</CardTitle>
                     <CardDescription>{product.description}</CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="flex flex-1 flex-col justify-end">
                     <p className="font-bold text-2xl">
                       ${product.price.toFixed(2)}
                     </p>

@@ -52,7 +52,8 @@ const routePathToType = (routePath: string): string => {
  * Generate TypeScript type definitions for all routes
  */
 export const generateRouteTypes = async (
-  outputPath?: string
+  outputPath?: string,
+  silent = false
 ): Promise<void> => {
   const routeTree = discoverRoutes("./src/app");
   const routes = routeTree.routes;
@@ -89,7 +90,9 @@ ${routeTypes.map((type) => `  | ${type}`).join("\n")};
 
   await writeFile(finalPath, typeDefinitions, "utf-8");
 
-  console.log(
-    `✅ Generated route types: ${routes.size} route(s) -> ${finalPath}`
-  );
+  if (!silent) {
+    console.log(
+      `✅ Generated route types: ${routes.size} route(s) -> ${finalPath}`
+    );
+  }
 };

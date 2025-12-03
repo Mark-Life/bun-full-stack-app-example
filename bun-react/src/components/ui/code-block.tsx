@@ -105,18 +105,18 @@ export const CodeBlock = ({
         {isHighlighted ? (
           <>
             <div
-              className="overflow-hidden dark:hidden [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+              className="dark:hidden [&>pre]:m-0 [&>pre]:whitespace-pre-wrap [&>pre]:wrap-break-word [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for Shiki HTML output
               dangerouslySetInnerHTML={{ __html: lightHtml }}
             />
             <div
-              className="hidden overflow-hidden dark:block [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+              className="hidden dark:block [&>pre]:m-0 [&>pre]:whitespace-pre-wrap [&>pre]:wrap-break-word [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for Shiki HTML output
               dangerouslySetInnerHTML={{ __html: darkHtml }}
             />
           </>
         ) : (
-          <pre className="m-0 overflow-auto bg-background p-4 text-foreground text-sm">
+          <pre className="m-0 whitespace-pre-wrap wrap-break-word bg-background p-4 text-foreground text-sm">
             <code className="font-mono text-sm">{code}</code>
           </pre>
         )}

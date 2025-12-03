@@ -20,6 +20,12 @@ import { hasClientNavigation } from "./layout";
 const ROUTE_FILES = ["page.tsx", "index.tsx"];
 
 /**
+ * Route handler file names (Next.js-style route.ts)
+ * These take precedence over page.tsx files
+ */
+const ROUTE_HANDLER_FILES = ["route.ts", "route.tsx", "route.js", "route.jsx"];
+
+/**
  * Layout file name
  */
 const LAYOUT_FILE = "layout.tsx";
@@ -57,8 +63,16 @@ export interface RouteInfo {
   revalidate?: number;
 }
 
+export interface RouteHandlerInfo {
+  path: string;
+  filePath: string;
+  dynamicSegments?: string[];
+  isDynamic?: boolean;
+}
+
 export interface RouteTree {
   routes: Map<string, RouteInfo>;
+  routeHandlers: Map<string, RouteHandlerInfo>;
   layouts: Map<string, string>;
 }
 
@@ -67,6 +81,12 @@ export interface RouteTree {
  */
 const isRouteFile = (filename: string): boolean =>
   ROUTE_FILES.includes(filename);
+
+/**
+ * Check if a file is a route handler file
+ */
+const isRouteHandlerFile = (filename: string): boolean =>
+  ROUTE_HANDLER_FILES.includes(filename);
 
 /**
  * Check if a file is a layout file
@@ -302,6 +322,73 @@ const processRouteFile = (
 };
 
 /**
+ * Convert file path to URL route for route handlers (route.ts)
+ * Similar to filePathToRoute but handles route.ts files
+ */
+const filePathToRouteHandler = (
+  filePath: string,
+  appDir: string
+): {
+  path: string;
+  dynamicSegments: string[];
+  isDynamic: boolean;
+} => {
+  const relativePath = relative(appDir, filePath);
+  const dir = dirname(relativePath);
+
+  // Build route path from directory segments (route.ts doesn't add a segment)
+  const dirSegments = dir === "." ? [] : dir.split("/").filter(Boolean);
+
+  // Process segments and convert dynamic patterns
+  const routeParts: string[] = [];
+  const dynamicSegments: string[] = [];
+  let isDynamic = false;
+
+  for (const segment of dirSegments) {
+    const dynamicInfo = extractDynamicSegment(segment);
+    if (dynamicInfo) {
+      isDynamic = true;
+      dynamicSegments.push(dynamicInfo.name);
+      if (dynamicInfo.isCatchAll) {
+        routeParts.push(`*${dynamicInfo.name}`);
+      } else {
+        routeParts.push(`:${dynamicInfo.name}`);
+      }
+    } else {
+      routeParts.push(segment);
+    }
+  }
+
+  const path = dirSegments.length === 0 ? "/" : `/${routeParts.join("/")}`;
+
+  return { path, dynamicSegments, isDynamic };
+};
+
+/**
+ * Process a route handler file and add it to the route handlers map
+ */
+const processRouteHandlerFile = (
+  fullPath: string,
+  appDir: string,
+  routeHandlers: Map<string, RouteHandlerInfo>
+): void => {
+  const {
+    path: routePath,
+    dynamicSegments,
+    isDynamic,
+  } = filePathToRouteHandler(fullPath, appDir);
+
+  const routeHandlerInfo: RouteHandlerInfo = {
+    path: routePath,
+    filePath: fullPath,
+    ...(isDynamic !== undefined && { isDynamic }),
+    ...(dynamicSegments.length > 0 && { dynamicSegments }),
+  };
+
+  routeHandlers.set(routePath, routeHandlerInfo);
+};
+
+/**
  * Process a layout file and add it to the layouts map
  */
 const processLayoutFile = (
@@ -318,14 +405,22 @@ const processLayoutFile = (
 };
 
 /**
+ * Options for scanning directories
+ */
+interface ScanDirectoryOptions {
+  dir: string;
+  appDir: string;
+  routes: Map<string, RouteInfo>;
+  routeHandlers: Map<string, RouteHandlerInfo>;
+  layouts: Map<string, string>;
+}
+
+/**
  * Recursively scan directory for routes
  */
-const scanDirectory = (
-  dir: string,
-  appDir: string,
-  routes: Map<string, RouteInfo>,
-  layouts: Map<string, string>
-): void => {
+const scanDirectory = (options: ScanDirectoryOptions): void => {
+  const { dir, appDir, routes, routeHandlers, layouts } = options;
+
   if (!existsSync(dir)) {
     return;
   }
@@ -338,9 +433,11 @@ const scanDirectory = (
 
     if (stat.isDirectory()) {
       // Recursively scan subdirectories
-      scanDirectory(fullPath, appDir, routes, layouts);
+      scanDirectory({ dir: fullPath, appDir, routes, routeHandlers, layouts });
     } else if (stat.isFile()) {
-      if (isRouteFile(entry)) {
+      if (isRouteHandlerFile(entry)) {
+        processRouteHandlerFile(fullPath, appDir, routeHandlers);
+      } else if (isRouteFile(entry)) {
         processRouteFile(fullPath, appDir, routes);
       } else if (isLayoutFile(entry)) {
         processLayoutFile(fullPath, appDir, layouts);
@@ -369,24 +466,31 @@ const toImportPath = (filePath: string, baseDir: string): string => {
  */
 export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
   const routes = new Map<string, RouteInfo>();
+  const routeHandlers = new Map<string, RouteHandlerInfo>();
   const layouts = new Map<string, string>();
 
   // Guard against running in browser environment
   if (typeof process === "undefined" || typeof process.cwd !== "function") {
     // Return empty route tree if running in browser (should never happen, but guard against it)
-    return { routes, layouts };
+    return { routes, routeHandlers, layouts };
   }
 
   const resolvedAppDir = join(process.cwd(), appDir);
   const srcDir = join(process.cwd(), "src");
 
   if (!existsSync(resolvedAppDir)) {
-    return { routes, layouts };
+    return { routes, routeHandlers, layouts };
   }
 
-  scanDirectory(resolvedAppDir, resolvedAppDir, routes, layouts);
+  scanDirectory({
+    dir: resolvedAppDir,
+    appDir: resolvedAppDir,
+    routes,
+    routeHandlers,
+    layouts,
+  });
 
-  // Convert absolute paths to import paths
+  // Convert absolute paths to import paths for routes
   for (const [path, routeInfo] of routes.entries()) {
     const updatedRouteInfo: RouteInfo = {
       path: routeInfo.path,
@@ -417,7 +521,22 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
     routes.set(path, updatedRouteInfo);
   }
 
-  return { routes, layouts };
+  // Convert absolute paths to import paths for route handlers
+  for (const [path, handlerInfo] of routeHandlers.entries()) {
+    const updatedHandlerInfo: RouteHandlerInfo = {
+      path: handlerInfo.path,
+      filePath: toImportPath(handlerInfo.filePath, srcDir),
+      ...(handlerInfo.isDynamic !== undefined && {
+        isDynamic: handlerInfo.isDynamic,
+      }),
+      ...(handlerInfo.dynamicSegments !== undefined && {
+        dynamicSegments: handlerInfo.dynamicSegments,
+      }),
+    };
+    routeHandlers.set(path, updatedHandlerInfo);
+  }
+
+  return { routes, routeHandlers, layouts };
 };
 
 /**
@@ -507,6 +626,43 @@ const matchPattern = (
 
   // Regular dynamic route matching
   return matchRegular(patternParts, urlParts);
+};
+
+/**
+ * Match a URL path to a route handler and extract params
+ */
+export const matchRouteHandler = (
+  urlPath: string,
+  routeHandlers: Map<string, RouteHandlerInfo>
+): { handler: RouteHandlerInfo; params: Record<string, string> } | null => {
+  // Normalize URL path
+  const normalizedPath =
+    urlPath === "/" ? "/" : urlPath.replace(TRAILING_SLASH_PATTERN, "") || "/";
+
+  // Exact match first
+  const exactHandler = routeHandlers.get(normalizedPath);
+  if (exactHandler) {
+    return { handler: exactHandler, params: {} };
+  }
+
+  // Try with trailing slash
+  const withSlash = normalizedPath === "/" ? "/" : `${normalizedPath}/`;
+  const handlerWithSlash = routeHandlers.get(withSlash);
+  if (handlerWithSlash) {
+    return { handler: handlerWithSlash, params: {} };
+  }
+
+  // Try dynamic route matching
+  for (const [pattern, handlerInfo] of routeHandlers.entries()) {
+    if (handlerInfo.isDynamic) {
+      const { matched, params } = matchPattern(pattern, normalizedPath);
+      if (matched) {
+        return { handler: handlerInfo, params };
+      }
+    }
+  }
+
+  return null;
 };
 
 /**

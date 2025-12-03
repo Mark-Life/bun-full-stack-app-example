@@ -1,5 +1,5 @@
 // This file is auto-generated. Do not edit manually.
-// Generated at: 2025-12-03T10:58:02.341Z
+// Generated at: 2025-12-03T12:45:12.439Z
 
 /**
  * Union type of all valid route paths in the application.
@@ -27,5 +27,4 @@ export type ValidRoutes =
   | "/demos/suspense"
   | "/docs"
   | "/docs/getting-started"
-  | `/catch-all/${string}`
   | `/demos/isr/${string}`;

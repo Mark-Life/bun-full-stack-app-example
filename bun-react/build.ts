@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { setCache } from "./src/framework/server/cache";
+import { generateRouteModulesFile } from "./src/framework/server/generate-route-modules";
 import { discoverPublicAssets } from "./src/framework/server/public";
 import { renderRouteToString } from "./src/framework/server/render";
 import { generateRouteTypes } from "./src/framework/shared/generate-route-types";
@@ -208,6 +209,207 @@ const formatFileSize = (bytes: number): string => {
   return `${size.toFixed(2)} ${units[unitIndex]}`;
 };
 
+/**
+ * Convert route path from internal format to Next.js-style format
+ * /blog/:slug -> /blog/[slug]
+ * /docs/*slug -> /docs/[...slug]
+ */
+const formatRoutePath = (routePath: string): string =>
+  routePath.replace(/\/\*(\w+)/g, "/[...$1]").replace(/\/:(\w+)/g, "/[$1]");
+
+/**
+ * Tree node structure for route display
+ */
+interface TreeNode {
+  segment: string;
+  children: TreeNode[];
+  isRoute: boolean;
+  routeType: "page" | "handler" | undefined;
+}
+
+/**
+ * Collect all routes from route tree
+ */
+const collectAllRoutes = (
+  routes: Map<string, unknown>,
+  routeHandlers: Map<string, unknown>
+): Array<{ path: string; type: "page" | "handler" }> => {
+  const allRoutes: Array<{ path: string; type: "page" | "handler" }> = [];
+
+  for (const routePath of routes.keys()) {
+    allRoutes.push({ path: routePath, type: "page" });
+  }
+
+  for (const handlerPath of routeHandlers.keys()) {
+    allRoutes.push({ path: handlerPath, type: "handler" });
+  }
+
+  // Sort routes by path depth and then alphabetically
+  return allRoutes.sort((a, b) => {
+    // Root route first
+    if (a.path === "/") {
+      return -1;
+    }
+    if (b.path === "/") {
+      return 1;
+    }
+
+    const aDepth = a.path.split("/").length;
+    const bDepth = b.path.split("/").length;
+
+    if (aDepth !== bDepth) {
+      return aDepth - bDepth;
+    }
+
+    return a.path.localeCompare(b.path);
+  });
+};
+
+/**
+ * Sort tree children (dynamic routes after static)
+ */
+const sortTreeChildren = (children: TreeNode[]): TreeNode[] =>
+  [...children].sort((a, b) => {
+    const aIsDynamic = a.segment.startsWith("[");
+    const bIsDynamic = b.segment.startsWith("[");
+    if (aIsDynamic !== bIsDynamic) {
+      return aIsDynamic ? 1 : -1;
+    }
+    return a.segment.localeCompare(b.segment);
+  });
+
+/**
+ * Process a single route and add it to the tree
+ */
+const addRouteToTree = (
+  route: { path: string; type: "page" | "handler" },
+  root: TreeNode
+): void => {
+  const formattedPath = formatRoutePath(route.path);
+  const segments =
+    formattedPath === "/" ? [] : formattedPath.split("/").filter(Boolean);
+
+  // Handle root route
+  if (segments.length === 0) {
+    root.isRoute = true;
+    root.routeType = route.type;
+    return;
+  }
+
+  let currentNode = root;
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (!segment) {
+      continue;
+    }
+
+    const isLast = i === segments.length - 1;
+    let childNode = currentNode.children.find((c) => c.segment === segment);
+
+    if (!childNode) {
+      childNode = {
+        segment,
+        children: [],
+        isRoute: isLast,
+        routeType: isLast ? route.type : undefined,
+      };
+      currentNode.children.push(childNode);
+    } else if (isLast) {
+      childNode.isRoute = true;
+      childNode.routeType = route.type;
+    }
+
+    currentNode = childNode;
+  }
+};
+
+/**
+ * Build tree structure from routes
+ */
+const buildRouteTree = (
+  allRoutes: Array<{ path: string; type: "page" | "handler" }>
+): TreeNode => {
+  const root: TreeNode = {
+    segment: "",
+    children: [],
+    isRoute: false,
+    routeType: undefined,
+  };
+
+  for (const route of allRoutes) {
+    addRouteToTree(route, root);
+  }
+
+  return root;
+};
+
+/**
+ * Print tree recursively
+ */
+const printTree = (node: TreeNode, prefix = "", isLast = true): void => {
+  if (node.segment) {
+    const connector = isLast ? "└──" : "├──";
+    const typeMarker = node.routeType === "handler" ? " (route)" : "";
+    console.log(`${prefix}${connector} ${node.segment}${typeMarker}`);
+  }
+
+  const sortedChildren = sortTreeChildren(node.children);
+
+  for (let i = 0; i < sortedChildren.length; i++) {
+    const childNode = sortedChildren[i];
+    if (!childNode) {
+      continue;
+    }
+
+    const isLastChild = i === sortedChildren.length - 1;
+    const nextPrefix = node.segment
+      ? prefix + (isLast ? "    " : "│   ")
+      : prefix;
+
+    printTree(childNode, nextPrefix, isLastChild);
+  }
+};
+
+/**
+ * Display routes in a tree structure similar to Next.js
+ */
+const displayRouteStructure = (
+  discoveredRoutes: ReturnType<typeof discoverRoutes>
+) => {
+  const { routes, routeHandlers } = discoveredRoutes;
+
+  if (routes.size === 0 && routeHandlers.size === 0) {
+    return;
+  }
+
+  console.log("📁 Route structure:");
+
+  const allRoutes = collectAllRoutes(routes, routeHandlers);
+  const root = buildRouteTree(allRoutes);
+
+  // Print root if it's a route
+  if (root.isRoute) {
+    const typeMarker = root.routeType === "handler" ? " (route)" : "";
+    console.log(`└── /${typeMarker}`);
+  }
+
+  // Print children
+  const sortedRootChildren = sortTreeChildren(root.children);
+
+  for (let i = 0; i < sortedRootChildren.length; i++) {
+    const childNode = sortedRootChildren[i];
+    if (!childNode) {
+      continue;
+    }
+
+    const isLastChild = i === sortedRootChildren.length - 1;
+    printTree(childNode, "", isLastChild);
+  }
+
+  console.log();
+};
+
 console.log("\n🚀 Starting build process...\n");
 
 const cliConfig = parseArgs();
@@ -215,7 +417,24 @@ const outdir = cliConfig.outdir || path.join(process.cwd(), "dist");
 
 // Generate route types for type-safe Link component
 console.log("📝 Generating route types...");
-await generateRouteTypes();
+const routeTree = discoverRoutes("./src/app");
+const routeTypesPath = path.join(
+  process.cwd(),
+  "src/framework/shared/routes.generated.ts"
+);
+await generateRouteTypes(routeTypesPath, true);
+const routeCount = routeTree.routes.size + routeTree.routeHandlers.size;
+console.log(
+  `✅ Generated route types: ${routeCount} route(s) -> ${path.relative(process.cwd(), routeTypesPath)}`
+);
+console.log();
+
+// Display route structure
+displayRouteStructure(routeTree);
+
+// Generate route modules for build-time rendering
+console.log("📦 Generating route modules...");
+generateRouteModulesFile(routeTree);
 console.log();
 
 if (existsSync(outdir)) {
@@ -523,10 +742,12 @@ const processStaticRoute = async (
 /**
  * Pre-render static pages at build time
  */
-const preRenderStaticPages = async () => {
+const preRenderStaticPages = async (
+  discoveredRoutes: ReturnType<typeof discoverRoutes>
+) => {
   console.log("📄 Pre-rendering static pages...");
 
-  const { routes } = discoverRoutes("./src/app");
+  const { routes } = discoveredRoutes;
   let staticCount = 0;
 
   for (const [routePath, routeInfo] of routes.entries()) {
@@ -556,7 +777,7 @@ const preRenderStaticPages = async () => {
 await buildHydrateBundle();
 await buildCssBundle();
 await copyPublicAssets();
-await preRenderStaticPages();
+await preRenderStaticPages(routeTree);
 
 const end = performance.now();
 

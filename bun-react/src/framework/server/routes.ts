@@ -1,17 +1,19 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import {
-  discoverRoutes,
-  matchRoute,
-  type RouteInfo,
-  type RouteTree,
-} from "@/framework/shared/router";
 import { hasClientNavigation } from "~/framework/shared/layout";
 import {
   extractPageType,
   hasGenerateParams,
   hasLoader,
 } from "~/framework/shared/page";
+import {
+  discoverRoutes,
+  matchRoute,
+  matchRouteHandler,
+  type RouteHandlerInfo,
+  type RouteInfo,
+  type RouteTree,
+} from "~/framework/shared/router";
 import {
   type ComponentType,
   hasClientBoundariesSync,
@@ -37,7 +39,9 @@ export const getRouteTree = (): RouteTree => routeTree;
  */
 export const rediscoverRoutes = (): RouteTree => {
   routeTree = discoverRoutes("./src/app");
-  console.log(`🔄 Rediscovered ${routeTree.routes.size} routes`);
+  console.log(
+    `🔄 Rediscovered ${routeTree.routes.size} routes, ${routeTree.routeHandlers.size} route handlers`
+  );
   return routeTree;
 };
 
@@ -131,6 +135,70 @@ export const getNotFoundRouteInfo = (): RouteInfo | null => {
   }
 
   return routeInfo;
+};
+
+/**
+ * Execute a route handler (route.ts file)
+ * Route handlers export HTTP method handlers (GET, POST, etc.)
+ */
+const executeRouteHandler = async (
+  handlerInfo: RouteHandlerInfo,
+  request: Request,
+  params: Record<string, string>
+): Promise<Response> => {
+  try {
+    // Import the route handler module
+    const handlerModule = await import(handlerInfo.filePath);
+    const method = request.method as
+      | "GET"
+      | "POST"
+      | "PUT"
+      | "PATCH"
+      | "DELETE"
+      | "HEAD"
+      | "OPTIONS";
+
+    // Check if the handler exports the requested method
+    const handler = handlerModule[method] || handlerModule.default;
+    if (!handler) {
+      return new Response(`Method ${method} not allowed`, { status: 405 });
+    }
+
+    // Call the handler with request and params
+    const response = await handler(request, { params });
+
+    // Ensure it returns a Response
+    if (response instanceof Response) {
+      return response;
+    }
+
+    // If it returns something else, wrap it
+    return Response.json(response);
+  } catch (error) {
+    console.error(
+      `Error executing route handler ${handlerInfo.filePath}:`,
+      error
+    );
+    return new Response("Internal server error", { status: 500 });
+  }
+};
+
+/**
+ * Match a URL path to a route handler and execute it
+ */
+export const matchAndExecuteRouteHandler = async (
+  pathname: string,
+  request: Request
+): Promise<Response | null> => {
+  const matchResult = matchRouteHandler(pathname, routeTree.routeHandlers);
+  if (matchResult) {
+    return await executeRouteHandler(
+      matchResult.handler,
+      request,
+      matchResult.params
+    );
+  }
+  return null;
 };
 
 /**
