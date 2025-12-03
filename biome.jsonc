@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": ["ultracite/core", "ultracite/react"],
+  "files": {
+    "includes": [
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/bun.lock",
+      "!**/src/components/ui",
+      "!**/docs-external",
+      "!**/index.css"
+    ]
+  },
+  "javascript": {
+    "globals": ["Bun"]
+  },
+  // ultracite overrides
+  "linter": {
+    "rules": {
+      // remove all console logs before go to production
+      "suspicious": {
+        "noConsole": "off"
+      },
+      "style": {
+        "noMagicNumbers": "off",
+        // prefer interface over type for object shapes
+        "useConsistentTypeDefinitions": {
+          "options": {
+            "style": "interface"
+          }
+        }
+      },
+      "complexity": {
+        "useLiteralKeys": "off"
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { Link } from "@/components/link";
 import {
   Card,
   CardContent,
@@ -5,7 +6,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Link } from "@/components/link";
 
 export const metadata = {
   title: "Getting Started - Bun React Framework",
@@ -85,7 +85,11 @@ export default function DashboardLayout({
           <section>
             <h2 className="mb-4 font-semibold text-2xl">Static Pages</h2>
             <p className="mb-4 text-muted-foreground">
-              Use <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">definePage()</code> to create static pages:
+              Use{" "}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                definePage()
+              </code>{" "}
+              to create static pages:
             </p>
             <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
               <code>{`import { definePage } from "~/framework/shared/page";

@@ -1,5 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "@/components/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface DocsLayoutProps {
   children: React.ReactNode;

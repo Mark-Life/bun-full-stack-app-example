@@ -1,3 +1,4 @@
+import { Link } from "@/components/link";
 import {
   Card,
   CardContent,
@@ -5,7 +6,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Link } from "@/components/link";
 
 export const metadata = {
   title: "Documentation - Bun React Framework",
@@ -24,7 +24,9 @@ export default function DocsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-6">
-            <h2 className="mb-2 font-semibold text-lg">MDX Support Coming Soon</h2>
+            <h2 className="mb-2 font-semibold text-lg">
+              MDX Support Coming Soon
+            </h2>
             <p className="mb-4 text-muted-foreground">
               Full MDX documentation support is planned for a future release.
               For now, explore the framework features through the interactive

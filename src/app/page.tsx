@@ -123,11 +123,14 @@ const FeatureItem = ({
         className="shrink-0 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10"
         variant="secondary"
       >
-        ✓
+        <span className="text-base leading-none">✓</span>
       </Badge>
     ) : (
-      <Badge className="shrink-0" variant="outline">
-        Soon
+      <Badge
+        className="shrink-0 bg-destructive/10 text-destructive hover:bg-destructive/10"
+        variant="secondary"
+      >
+        <span className="text-base leading-none">✗</span>
       </Badge>
     )}
   </div>
