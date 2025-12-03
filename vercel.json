@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "bunVersion": "1.x",
-  "installCommand": "bun install --frozen-lockfile",
-  "buildCommand": "bun run build",
-  "outputDirectory": "dist"
+  "installCommand": "cd bun-react && bun install --frozen-lockfile",
+  "buildCommand": "cd bun-react && bun run build",
+  "outputDirectory": "bun-react/dist"
 }
