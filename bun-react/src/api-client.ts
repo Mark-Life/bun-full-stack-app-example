@@ -217,8 +217,12 @@ const buildPathMap = (
         // Method-grouped routes share the same path
         for (const [methodKey, routeValue] of Object.entries(value)) {
           if (isRoute(routeValue)) {
-            const finalPath = buildPathWithParams(basePath, prefix, routeValue);
-            pathMap.set(`${prefix}:${methodKey}`, finalPath);
+            const finalPath = buildPathWithParams(
+              basePath,
+              currentPath,
+              routeValue
+            );
+            pathMap.set(`${currentPath}:${methodKey}`, finalPath);
           }
         }
       } else if (value && typeof value === "object") {
@@ -263,8 +267,8 @@ const buildClientProxy = <T extends RouterShape>(
       > = {};
       for (const [methodKey] of Object.entries(value)) {
         const url =
-          pathMap.get(`${pathPrefix}:${methodKey}`) ||
-          `${basePath}${pathPrefix}`;
+          pathMap.get(`${currentPath}:${methodKey}`) ||
+          `${basePath}${currentPath}`;
         methodHandlers[methodKey] = createRouteHandler(url, methodKey);
       }
       proxy[key] = methodHandlers;
