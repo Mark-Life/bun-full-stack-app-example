@@ -263,7 +263,16 @@ const processRouteFile = (
   const isClientComponent = hasUseClientDirective(fullPath);
 
   // Check if the page imports any client components (has client boundaries)
-  const hasClientBoundaries = hasClientBoundariesSync(fullPath);
+  // Also check if any layout imports client components
+  const allLayoutPaths = [
+    ...(layoutPath ? [layoutPath] : []),
+    ...parentLayouts,
+  ];
+  const layoutHasClientBoundaries = allLayoutPaths.some((path) =>
+    hasClientBoundariesSync(path)
+  );
+  const hasClientBoundaries =
+    hasClientBoundariesSync(fullPath) || layoutHasClientBoundaries;
 
   // Detect page configuration
   const pageType = extractPageType(fullPath);

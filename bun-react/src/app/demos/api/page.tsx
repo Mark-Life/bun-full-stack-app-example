@@ -70,7 +70,8 @@ const APITester = clientComponent(() => {
         </Label>
         <Select defaultValue="GET" name="method">
           <SelectTrigger className="w-[100px]" id="method">
-            <SelectValue placeholder="Method" />
+            {/* Show default value directly - SelectValue doesn't SSR */}
+            <SelectValue>GET</SelectValue>
           </SelectTrigger>
           <SelectContent align="start">
             <SelectItem value="GET">GET</SelectItem>

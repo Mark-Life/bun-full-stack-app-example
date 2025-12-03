@@ -2,6 +2,7 @@ import React from "react";
 import { renderToReadableStream, renderToString } from "react-dom/server";
 import type { RouteInfo } from "@/framework/shared/router";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
+import { SSRRoutePathProvider } from "~/framework/shared/route-context";
 
 /**
  * Resolve import path, converting ~/ alias to actual file path
@@ -254,6 +255,8 @@ const loadLayouts = async (
 
 /**
  * Build component tree with layouts
+ * Wraps the tree with SSRRoutePathProvider so client components can access
+ * the current route path during server-side rendering (prevents hydration flash)
  */
 const buildComponentTree = (
   PageComponent: React.ComponentType<Record<string, unknown>>,
@@ -285,7 +288,16 @@ const buildComponentTree = (
       component = React.createElement(layout.component, props, component);
     }
   }
-  return component;
+
+  // Wrap with SSRRoutePathProvider so client components can access
+  // the current route path during SSR (before hydration completes)
+  return React.createElement(
+    SSRRoutePathProvider,
+    { routePath: options.routePath } as React.ComponentProps<
+      typeof SSRRoutePathProvider
+    >,
+    component
+  );
 };
 
 /**

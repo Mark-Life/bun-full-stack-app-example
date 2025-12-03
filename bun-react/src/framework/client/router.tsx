@@ -30,6 +30,9 @@ interface RouteParamsContext {
 
 const RouteParamsContext = createContext<RouteParamsContext | null>(null);
 
+// Import SSR route path hook from shared module
+import { useSSRRoutePath } from "~/framework/shared/route-context";
+
 /**
  * Client-side router hook
  * Returns a default router context if RouterProvider is not available
@@ -37,12 +40,18 @@ const RouteParamsContext = createContext<RouteParamsContext | null>(null);
  */
 export const useRouter = (): RouterContext => {
   const context = useContext(RouterContext);
+  const ssrRoutePath = useSSRRoutePath();
+
   if (!context) {
     // Return a safe default context that allows links to work normally
-    // During SSR or when RouterProvider isn't available, links will use regular navigation
+    // During SSR, use the path from SSRRoutePathContext if available
+    // After hydration with no RouterProvider, use window.location.pathname
+    const currentPath =
+      ssrRoutePath ??
+      (typeof window !== "undefined" ? window.location.pathname : "/");
+
     return {
-      currentPath:
-        typeof window !== "undefined" ? window.location.pathname : "/",
+      currentPath,
       navigate: (path: string) => {
         // If window is available but no RouterProvider, use regular navigation
         if (typeof window !== "undefined") {
