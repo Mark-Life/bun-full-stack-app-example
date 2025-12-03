@@ -41,7 +41,9 @@ const StaticDemoPage = ({
         <CardContent className="space-y-4">
           <div className="rounded-lg bg-muted p-4">
             <p className="mb-2 font-semibold text-sm">Build Timestamp:</p>
-            <code className="text-lg">{buildTime}</code>
+            <code className="text-lg" suppressHydrationWarning>
+              {buildTime}
+            </code>
           </div>
           <div className="rounded-lg bg-muted p-4">
             <p className="mb-2 font-semibold text-sm">Message:</p>

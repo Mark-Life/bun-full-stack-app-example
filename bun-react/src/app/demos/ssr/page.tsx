@@ -33,7 +33,9 @@ export default function SSRDemoPage() {
         <CardContent className="space-y-4">
           <div className="rounded-lg bg-muted p-4">
             <p className="mb-2 font-semibold text-sm">Server Timestamp:</p>
-            <code className="text-lg">{serverTimestamp}</code>
+            <code className="text-lg" suppressHydrationWarning>
+              {serverTimestamp}
+            </code>
           </div>
           <p className="text-muted-foreground text-sm">
             This timestamp is embedded in the HTML sent from the server. If you
