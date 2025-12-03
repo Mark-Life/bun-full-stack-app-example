@@ -9,8 +9,9 @@ import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 import { matchRoute, type RouteInfo } from "~/framework/shared/router";
 import middlewareConfig from "~/middleware";
 import { getFromCache, isStale, setCache } from "./cache";
+import { generateRouteModulesFile } from "./generate-route-modules";
 import { discoverPublicAssets } from "./public";
-import { renderRoute, renderRouteToString } from "./render";
+import { clearModuleCache, renderRoute, renderRouteToString } from "./render";
 import { queueRevalidation } from "./revalidate";
 import {
   getNotFoundRouteInfo,
@@ -75,20 +76,6 @@ console.log("API routes:", Object.keys(apiHandlers));
 const wrappedApiHandlers = applyMiddleware(middlewareConfig, apiHandlers);
 
 /**
- * Resolve import path, converting ~/ alias to relative path
- * ~/ maps to ./src/ relative to project root
- * Since we're in framework/server/, we need to go up to src/
- */
-const resolveImportPath = (importPath: string): string => {
-  if (importPath.startsWith("~/")) {
-    // Convert ~/app/page.tsx to ../../app/page.tsx (from framework/server/ to src/)
-    const pathWithoutAlias = importPath.slice(2); // Remove ~/
-    return `../../${pathWithoutAlias}`;
-  }
-  return importPath;
-};
-
-/**
  * Render and cache a route for ISR
  */
 const renderAndCache = async (
@@ -96,16 +83,29 @@ const renderAndCache = async (
   routeInfo: RouteInfo,
   params: Record<string, string>
 ): Promise<string> => {
-  // Load page component to check for loader
-  const resolvedPagePath = resolveImportPath(routeInfo.filePath);
-  const pageModule = await import(resolvedPagePath);
+  // Load page data if loader exists
+  // We need to import the module to check for loader
+  // Use dynamic import with try-catch in case file doesn't exist yet
+  let routeModules: Map<string, { default: unknown }>;
+  try {
+    const module = await import("./route-modules.generated");
+    routeModules = module.routeModules;
+  } catch {
+    // Fallback: generate the file if it doesn't exist
+    const routeTree = getRouteTree();
+    generateRouteModulesFile(routeTree);
+    const module = await import("./route-modules.generated");
+    routeModules = module.routeModules;
+  }
+  const pageModule = routeModules.get(routeInfo.filePath);
+  if (!pageModule) {
+    throw new Error(`No module found for ${routeInfo.filePath}`);
+  }
   const PageComponent = pageModule.default;
-
   if (!PageComponent) {
     throw new Error(`No default export found in ${routeInfo.filePath}`);
   }
 
-  // Load page data if loader exists
   let pageData: unknown;
   if (hasPageConfig(PageComponent)) {
     const config = getPageConfig(PageComponent);
@@ -114,7 +114,7 @@ const renderAndCache = async (
     }
   }
 
-  // Render the page
+  // Render the page (renderRouteToString uses the module registry)
   const html = await renderRouteToString(routeInfo, pageData, params);
 
   // Cache the result
@@ -362,6 +362,10 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+// Generate route modules on startup (enables Bun --hot tracking)
+const initialRouteTree = getRouteTree();
+generateRouteModulesFile(initialRouteTree);
+
 console.log(`🚀 Server running at ${server.url}`);
 
 /**
@@ -369,11 +373,17 @@ console.log(`🚀 Server running at ${server.url}`);
  */
 const reloadRoutes = async (): Promise<void> => {
   try {
-    // Regenerate route types
-    await generateRouteTypes();
+    // Rediscover routes first
+    const newRouteTree = rediscoverRoutes();
 
-    // Rediscover routes
-    rediscoverRoutes();
+    // Regenerate static imports module (enables Bun --hot tracking)
+    generateRouteModulesFile(newRouteTree);
+
+    // Clear module cache so fresh modules are loaded
+    clearModuleCache();
+
+    // Regenerate route types (for client-side typesafe links)
+    await generateRouteTypes();
 
     // Invalidate hydrate bundle cache
     hydrateBundleCache = null;
@@ -494,7 +504,7 @@ const reloadRoutes = async (): Promise<void> => {
       },
     });
 
-    console.log("✅ Routes reloaded");
+    console.log("✅ Routes reloaded with fresh modules");
   } catch (error) {
     console.error("❌ Failed to reload routes:", error);
   }
@@ -554,38 +564,14 @@ if (process.env.NODE_ENV !== "production") {
           filename.endsWith("not-found.tsx");
 
         if (isRouteFile) {
-          if (eventType === "change") {
-            console.log(`📝 Detected change in ${filename}`);
-            // IMPORTANT: Rediscover routes SYNCHRONOUSLY before sending HMR update
-            // This ensures route info (including hasClientBoundaries) is fresh
-            // when the browser reloads and makes a new request
-            rediscoverRoutes();
-            // Invalidate hydrate bundle cache immediately
-            hydrateBundleCache = null;
-            // Schedule full reload (types, server routes) with debounce
-            debouncedReload();
-            // Delay before HMR to let Bun's hot reload settle
-            // This prevents race conditions with module cache invalidation
-            // Use queueMicrotask first, then setTimeout for extra safety
-            queueMicrotask(() =>
-              setTimeout(() => sendHMRUpdate(filename), 100)
-            );
-          } else if (eventType === "rename") {
-            // File added or deleted
-            console.log(`📝 Detected rename (add/delete) in ${filename}`);
-            // Rediscover routes synchronously first
-            rediscoverRoutes();
-            hydrateBundleCache = null;
-            debouncedReload();
-            // Delay before HMR
-            queueMicrotask(() =>
-              setTimeout(() => sendHMRUpdate(filename), 100)
-            );
-          }
+          console.log(`📝 Detected change in route file: ${filename}`);
+          // Schedule reload (generates modules, updates routes, reloads server)
+          debouncedReload();
+          // Send HMR signal after reload completes
+          setTimeout(() => sendHMRUpdate(filename), 350);
         } else if (eventType === "change") {
           // For other files (components, etc.), just send HMR update
-          // Delay to let Bun process the change
-          queueMicrotask(() => setTimeout(() => sendHMRUpdate(filename), 100));
+          sendHMRUpdate(filename);
         }
       }
     );
@@ -606,11 +592,11 @@ if (process.env.NODE_ENV !== "production") {
             console.log(`📝 Detected change in component: ${filename}`);
             // Rediscover routes in case "use client" was added/removed
             rediscoverRoutes();
+            generateRouteModulesFile(getRouteTree());
+            clearModuleCache();
             hydrateBundleCache = null;
-            // Delay before HMR
-            queueMicrotask(() =>
-              setTimeout(() => sendHMRUpdate(filename), 100)
-            );
+            // Send HMR signal
+            sendHMRUpdate(filename);
           }
         }
       );
