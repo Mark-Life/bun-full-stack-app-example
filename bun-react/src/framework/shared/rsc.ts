@@ -16,11 +16,13 @@ const CLIENT_MARKER = Symbol.for("__isClient");
  * Regex patterns for detecting client component usage
  */
 const CLIENT_COMPONENT_REGEX = /clientComponent\s*\(/g;
+const USE_CLIENT_DIRECTIVE_REGEX = /^\s*["']use client["'];?\s*$/m;
 const IMPORT_CLIENT_COMPONENT_REGEX =
   /import\s+.*\bclientComponent\b.*from\s+["'][^"']+["']/;
 const EXPORT_CLIENT_COMPONENT_REGEX =
   /export\s+(?:default\s+)?(?:const|function|class)\s+\w+\s*=\s*clientComponent/;
-const IMPORT_FROM_REGEX = /import\s+.*\s+from\s+["']([^"']+)["']/g;
+// Use [\s\S]*? to match any character including newlines (non-greedy)
+const IMPORT_FROM_REGEX = /import\s+[\s\S]*?\s+from\s+["']([^"']+)["']/g;
 
 /**
  * Type-safe client component marker
@@ -40,8 +42,8 @@ export const clientComponent = <P = Record<string, unknown>>(
 };
 
 /**
- * Check if a file uses clientComponent wrapper
- * Scans source code for clientComponent( usage patterns
+ * Check if a file is a client component
+ * Detects both "use client" directive (shadcn/ui convention) and clientComponent() wrapper
  */
 export const hasUseClientDirective = (filePath: string): boolean => {
   if (!existsSync(filePath)) {
@@ -57,13 +59,21 @@ export const hasUseClientDirective = (filePath: string): boolean => {
 };
 
 /**
- * Check if content uses clientComponent wrapper
+ * Check if content uses clientComponent wrapper OR "use client" directive
  * Looks for patterns like:
+ * - "use client" directive at the top of the file (shadcn/ui convention)
  * - export const X = clientComponent(...)
  * - export default clientComponent(...)
  * - const X = clientComponent(...)
  */
 const hasClientComponentUsage = (content: string): boolean => {
+  // Check for "use client" directive (must be at start of file, before any imports)
+  // Check first 200 characters to catch directive at the beginning
+  const firstLines = content.slice(0, 200);
+  if (USE_CLIENT_DIRECTIVE_REGEX.test(firstLines)) {
+    return true;
+  }
+
   // Check for clientComponent( usage
   // Matches: clientComponent(, clientComponent (with optional whitespace)
   if (CLIENT_COMPONENT_REGEX.test(content)) {
@@ -89,29 +99,10 @@ export type ComponentType = "server" | "client";
 
 /**
  * Determine component type from file path
- * Checks if file uses clientComponent wrapper
+ * Checks if file uses "use client" directive or clientComponent wrapper
  */
 export const getComponentType = (filePath: string): ComponentType =>
   hasUseClientDirective(filePath) ? "client" : "server";
-
-/**
- * Check if a relative import path is a client component
- */
-const checkRelativeImport = (filePath: string, importPath: string): boolean => {
-  const resolvedPath = join(dirname(filePath), importPath);
-  const extensions = [".tsx", ".ts", ".jsx", ".js"];
-
-  for (const ext of extensions) {
-    const fullPath = resolvedPath.endsWith(ext)
-      ? resolvedPath
-      : `${resolvedPath}${ext}`;
-    if (existsSync(fullPath) && hasUseClientDirective(fullPath)) {
-      return true;
-    }
-  }
-
-  return false;
-};
 
 /**
  * Extract import paths from file content
@@ -137,6 +128,7 @@ const extractImportPaths = (content: string): string[] => {
 /**
  * Scan imports in a file to find client component boundaries
  * Returns array of import paths that are client components
+ * Supports both relative imports (./...) and aliased imports (@/... and ~/...)
  */
 export const findClientBoundaries = (filePath: string): string[] => {
   if (!existsSync(filePath)) {
@@ -148,8 +140,13 @@ export const findClientBoundaries = (filePath: string): string[] => {
   const clientImports: string[] = [];
 
   for (const importPath of importPaths) {
-    if (importPath.startsWith(".")) {
-      const isClient = checkRelativeImport(filePath, importPath);
+    // Check relative imports (./...) and aliased imports (@/... and ~/...)
+    if (
+      importPath.startsWith(".") ||
+      importPath.startsWith("@/") ||
+      importPath.startsWith("~/")
+    ) {
+      const isClient = checkImportSync(filePath, importPath);
       if (isClient) {
         clientImports.push(importPath);
       }
@@ -160,13 +157,59 @@ export const findClientBoundaries = (filePath: string): string[] => {
 };
 
 /**
- * Check if a relative import path is a client component (sync version)
+ * Resolve aliased import path to actual file path
+ * Handles @/ and ~/ aliases that map to src/
  */
-const checkRelativeImportSync = (
+const resolveAliasedImport = (
   filePath: string,
   importPath: string
-): boolean => {
-  const resolvedPath = join(dirname(filePath), importPath);
+): string | null => {
+  // Extract project root (everything up to /src/)
+  // filePath is like: /path/to/project/src/app/page.tsx
+  // We need: /path/to/project/src/
+  const srcIndex = filePath.indexOf("/src/");
+  if (srcIndex === -1) {
+    return null;
+  }
+
+  const srcDir = filePath.slice(0, srcIndex + 5); // +5 for "/src/"
+
+  // Handle @/ alias -> src/
+  if (importPath.startsWith("@/")) {
+    return join(srcDir, importPath.slice(2));
+  }
+
+  // Handle ~/ alias -> src/
+  if (importPath.startsWith("~/")) {
+    return join(srcDir, importPath.slice(2));
+  }
+
+  return null;
+};
+
+/**
+ * Check if an import path (relative or aliased) is a client component (sync version)
+ */
+const checkImportSync = (filePath: string, importPath: string): boolean => {
+  let resolvedPath: string | null = null;
+
+  // Handle relative imports
+  if (importPath.startsWith(".")) {
+    resolvedPath = join(dirname(filePath), importPath);
+  }
+  // Handle aliased imports (@/ and ~/)
+  else if (importPath.startsWith("@/") || importPath.startsWith("~/")) {
+    resolvedPath = resolveAliasedImport(filePath, importPath);
+  }
+  // Skip node_modules and other external imports
+  else {
+    return false;
+  }
+
+  if (!resolvedPath) {
+    return false;
+  }
+
   const extensions = [".tsx", ".ts", ".jsx", ".js"];
 
   for (const ext of extensions) {
@@ -184,6 +227,7 @@ const checkRelativeImportSync = (
 /**
  * Sync version of findClientBoundaries for use during route discovery
  * Returns true if the file imports any client components
+ * Supports both relative imports (./...) and aliased imports (@/... and ~/...)
  */
 export const hasClientBoundariesSync = (filePath: string): boolean => {
   if (!existsSync(filePath)) {
@@ -194,8 +238,13 @@ export const hasClientBoundariesSync = (filePath: string): boolean => {
   const importPaths = extractImportPaths(content);
 
   for (const importPath of importPaths) {
-    if (importPath.startsWith(".")) {
-      const isClient = checkRelativeImportSync(filePath, importPath);
+    // Check relative imports (./...) and aliased imports (@/... and ~/...)
+    if (
+      importPath.startsWith(".") ||
+      importPath.startsWith("@/") ||
+      importPath.startsWith("~/")
+    ) {
+      const isClient = checkImportSync(filePath, importPath);
       if (isClient) {
         return true;
       }

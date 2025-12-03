@@ -30,8 +30,10 @@ bun start    # production
 
   - Default: Server components (no wrapper)
   - `clientComponent()` wrapper marks client component boundaries (type-safe)
+  - `"use client"` directive at top of file (shadcn/ui compatibility)
   - Server components can contain client components
   - Automatic client boundary detection for proper hydration
+  - Note: `"use client"` must be at the top of the file (not inside component functions like Next.js)
 
 - [x] **Suspense Streaming** - Progressive render with loading fallbacks
   - Async Server Components stream progressively as promises resolve
@@ -87,7 +89,7 @@ bun start    # production
 **Default model**: React Server Components (RSC).
 
 - Server components (default): Render on server only
-- Client components (`clientComponent()` wrapper): Render on server (SSR) + hydrate on client
+- Client components (via `clientComponent()` wrapper or `"use client"` directive): Render on server (SSR) + hydrate on client
 
 ```
 Request → Match route → Render (server + client components)
@@ -97,15 +99,23 @@ Request → Match route → Render (server + client components)
 
 ### RSC Flow
 
-1. **No wrapper** = Server component (render once on server)
+1. **No wrapper/directive** = Server component (render once on server)
 2. **`clientComponent()` wrapper** = Client component boundary (hydrates for interactivity)
    ```tsx
    import { clientComponent } from "~/framework/shared/rsc";
    export const MyComponent = clientComponent((props) => { ... });
    ```
-3. Server components can import client components (client boundaries)
-4. **Async Server Components** = Can use Suspense for progressive streaming
-5. **Layouts** = Always included in hydration (preserves DOM structure during hydration)
+3. **`"use client"` directive** = Client component (shadcn/ui compatibility)
+   ```tsx
+   "use client";
+   
+   import { useState } from "react";
+   export const MyComponent = (props) => { ... };
+   ```
+   **Note**: `"use client"` must be at the very top of the file (before any imports). Unlike Next.js, we don't support placing `"use client"` inside component functions.
+4. Server components can import client components (client boundaries)
+5. **Async Server Components** = Can use Suspense for progressive streaming
+6. **Layouts** = Always included in hydration (preserves DOM structure during hydration)
 
 ### Suspense Streaming
 

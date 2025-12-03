@@ -556,22 +556,69 @@ if (process.env.NODE_ENV !== "production") {
         if (isRouteFile) {
           if (eventType === "change") {
             console.log(`📝 Detected change in ${filename}`);
+            // IMPORTANT: Rediscover routes SYNCHRONOUSLY before sending HMR update
+            // This ensures route info (including hasClientBoundaries) is fresh
+            // when the browser reloads and makes a new request
+            rediscoverRoutes();
+            // Invalidate hydrate bundle cache immediately
+            hydrateBundleCache = null;
+            // Schedule full reload (types, server routes) with debounce
             debouncedReload();
-            // Send HMR update for route files
-            sendHMRUpdate(filename);
+            // Delay before HMR to let Bun's hot reload settle
+            // This prevents race conditions with module cache invalidation
+            // Use queueMicrotask first, then setTimeout for extra safety
+            queueMicrotask(() =>
+              setTimeout(() => sendHMRUpdate(filename), 100)
+            );
           } else if (eventType === "rename") {
             // File added or deleted
             console.log(`📝 Detected rename (add/delete) in ${filename}`);
+            // Rediscover routes synchronously first
+            rediscoverRoutes();
+            hydrateBundleCache = null;
             debouncedReload();
-            // Send HMR update
-            sendHMRUpdate(filename);
+            // Delay before HMR
+            queueMicrotask(() =>
+              setTimeout(() => sendHMRUpdate(filename), 100)
+            );
           }
         } else if (eventType === "change") {
           // For other files (components, etc.), just send HMR update
-          sendHMRUpdate(filename);
+          // Delay to let Bun process the change
+          queueMicrotask(() => setTimeout(() => sendHMRUpdate(filename), 100));
         }
       }
     );
+
+    // Watch components directory for "use client" changes
+    const componentsDir = join(process.cwd(), "src/components");
+    try {
+      watch(
+        componentsDir,
+        { recursive: true },
+        (eventType: string, filename: string | null) => {
+          if (!filename || eventType !== "change") {
+            return;
+          }
+
+          // Only watch .tsx and .ts files
+          if (filename.endsWith(".tsx") || filename.endsWith(".ts")) {
+            console.log(`📝 Detected change in component: ${filename}`);
+            // Rediscover routes in case "use client" was added/removed
+            rediscoverRoutes();
+            hydrateBundleCache = null;
+            // Delay before HMR
+            queueMicrotask(() =>
+              setTimeout(() => sendHMRUpdate(filename), 100)
+            );
+          }
+        }
+      );
+      console.log(`👀 Watching ${componentsDir} for component changes`);
+    } catch (error) {
+      // Components directory might not exist
+      console.warn("⚠️  Could not watch components directory:", error);
+    }
 
     // Watch the generated types file so TypeScript picks up changes
     try {

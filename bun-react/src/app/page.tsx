@@ -8,7 +8,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+  SystemThemeWrapper,
+} from "@/components/ui/code-block";
 import { definePage } from "~/framework/shared/page";
+import { clientComponent } from "~/framework/shared/rsc";
 
 /**
  * Displays a feature item with status indicator (done/planned)
@@ -84,7 +90,7 @@ const demoFeatures = [
   },
 ] as const;
 
-const LandingPage = () => (
+const LandingPage = clientComponent(() => (
   <div className="min-h-screen bg-background">
     {/* Hero Section */}
     <section className="container relative z-10 mx-auto px-4 py-16 text-center md:py-24">
@@ -252,8 +258,9 @@ const LandingPage = () => (
             <CardTitle className="text-lg">Static Pages</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-              <code>{`definePage({
+            <SystemThemeWrapper>
+              <CodeBlock
+                code={`definePage({
   type: 'static',
   loader: async () => ({
     data: await fetchData()
@@ -261,8 +268,12 @@ const LandingPage = () => (
   component: ({ data }) => (
     <div>{data.title}</div>
   )
-})`}</code>
-            </pre>
+})`}
+                language="typescript"
+              >
+                <CodeBlockCopyButton />
+              </CodeBlock>
+            </SystemThemeWrapper>
           </CardContent>
         </Card>
         <Card>
@@ -270,8 +281,10 @@ const LandingPage = () => (
             <CardTitle className="text-lg">Client Components</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-              <code>{`export const Counter = 
+            <SystemThemeWrapper>
+              <CodeBlock
+                code={`// Using clientComponent() wrapper:
+export const Counter = 
   clientComponent(() => {
     const [count, setCount] = 0
     return (
@@ -280,8 +293,16 @@ const LandingPage = () => (
         {count}
       </button>
     )
-  })`}</code>
-            </pre>
+  })
+
+// Or using "use client" at top of file (shadcn/ui style):
+"use client";
+export const Counter = () => { ... }`}
+                language="tsx"
+              >
+                <CodeBlockCopyButton />
+              </CodeBlock>
+            </SystemThemeWrapper>
           </CardContent>
         </Card>
         <Card>
@@ -289,15 +310,20 @@ const LandingPage = () => (
             <CardTitle className="text-lg">Client Navigation</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-              <code>{`defineLayout({
-  clientNavigation: true,
-  component: ({ children }) => (
-    <nav>...</nav>
-    {children}
-  )
-})`}</code>
-            </pre>
+            <SystemThemeWrapper>
+              <CodeBlock
+                code={`defineLayout({
+      clientNavigation: true,
+      component: ({ children }) => (
+        <nav>...</nav>
+        {children}
+      )
+    })`}
+                language="tsx"
+              >
+                <CodeBlockCopyButton />
+              </CodeBlock>
+            </SystemThemeWrapper>
           </CardContent>
         </Card>
       </div>
@@ -320,7 +346,7 @@ const LandingPage = () => (
       </div>
     </footer>
   </div>
-);
+));
 
 export default definePage({
   type: "static",
