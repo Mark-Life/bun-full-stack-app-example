@@ -8,7 +8,7 @@ import { applyMiddleware } from "~/framework/shared/middleware";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 import { matchRoute, type RouteInfo } from "~/framework/shared/router";
 import middlewareConfig from "~/middleware";
-import { getFromCache, isStale, setCache } from "./cache";
+import { formatCacheAge, getFromCache, isStale, setCache } from "./cache";
 import { generateRouteModulesFile } from "./generate-route-modules";
 import { discoverPublicAssets } from "./public";
 import { clearModuleCache, renderRoute, renderRouteToString } from "./render";
@@ -84,6 +84,8 @@ const renderAndCache = async (
   routeInfo: RouteInfo,
   params: Record<string, string>
 ): Promise<string> => {
+  console.log(`[ISR] 🎨 RENDERING PAGE: ${pathname} | Params:`, params);
+
   // Load page data if loader exists
   // We need to import the module to check for loader
   // Use dynamic import with try-catch in case file doesn't exist yet
@@ -111,12 +113,18 @@ const renderAndCache = async (
   if (hasPageConfig(PageComponent)) {
     const config = getPageConfig(PageComponent);
     if (config.loader) {
+      console.log(`[ISR] 📥 Loading data for: ${pathname}`);
       pageData = await config.loader(params);
+      console.log(`[ISR] ✅ Data loaded for: ${pathname}`);
     }
   }
 
   // Render the page (renderRouteToString uses the module registry)
+  console.log(`[ISR] 🖼️  Rendering HTML for: ${pathname}`);
   const html = await renderRouteToString(routeInfo, pageData, params);
+  console.log(
+    `[ISR] ✅ HTML rendered for: ${pathname} (${Math.round(html.length / 1024)}KB)`
+  );
 
   // Cache the result
   if (routeInfo.revalidate) {
@@ -125,6 +133,9 @@ const renderAndCache = async (
       generatedAt: Date.now(),
       revalidate: routeInfo.revalidate,
     });
+    console.log(
+      `[ISR] 💾 Cached: ${pathname} | Revalidate: ${routeInfo.revalidate}s`
+    );
   }
 
   return html;
@@ -140,6 +151,10 @@ const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
   if (cached) {
     if (!isStale(cached)) {
       // Fresh - serve cached with HIT header
+      const cacheAge = formatCacheAge(cached);
+      console.log(
+        `[ISR] ✅ CACHE HIT - Serving static (no rendering): ${pathname} | Age: ${cacheAge}`
+      );
       return new Response(cached.html, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -149,6 +164,10 @@ const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
     }
 
     // Stale - serve cached but queue background revalidation
+    const cacheAge = formatCacheAge(cached);
+    console.log(
+      `[ISR] ⚠️  CACHE STALE - Serving static (no rendering), queuing background revalidation: ${pathname} | Age: ${cacheAge}`
+    );
     queueRevalidation(pathname);
     return new Response(cached.html, {
       headers: {
@@ -167,11 +186,15 @@ const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
     matchResult.route.revalidate
   ) {
     // ISR-enabled static route - render, cache, and serve
+    console.log(
+      `[ISR] 🔄 CACHE MISS - Rendering and caching: ${pathname} | Revalidate: ${matchResult.route.revalidate}s`
+    );
     const html = await renderAndCache(
       pathname,
       matchResult.route,
       matchResult.params
     );
+    console.log(`[ISR] ✅ Rendered and cached: ${pathname}`);
     return new Response(html, {
       headers: {
         "Content-Type": "text/html; charset=utf-8",

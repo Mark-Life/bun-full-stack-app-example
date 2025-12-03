@@ -44,6 +44,32 @@ export const isStale = (entry: CacheEntry): boolean => {
 };
 
 /**
+ * Get cache age in seconds
+ */
+export const getCacheAge = (entry: CacheEntry): number =>
+  Math.floor((Date.now() - entry.generatedAt) / 1000);
+
+/**
+ * Format cache age for logging
+ */
+export const formatCacheAge = (entry: CacheEntry): string => {
+  const ageSeconds = getCacheAge(entry);
+  const revalidateSeconds = entry.revalidate;
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  const revalidateMinutes = Math.floor(revalidateSeconds / 60);
+
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s / ${revalidateSeconds}s`;
+  }
+  if (revalidateSeconds < 3600) {
+    return `${ageMinutes}m / ${revalidateMinutes}m`;
+  }
+  const ageHours = Math.floor(ageMinutes / 60);
+  const revalidateHours = Math.floor(revalidateMinutes / 60);
+  return `${ageHours}h ${ageMinutes % 60}m / ${revalidateHours}h ${revalidateMinutes % 60}m`;
+};
+
+/**
  * Get cache entry from memory or disk
  */
 export const getFromCache = async (

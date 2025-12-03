@@ -11,11 +11,11 @@ import { getAllProducts, type Product } from "~/lib/products";
 
 /**
  * ISR Demo - Products listing page
- * Revalidates every 60 seconds
+ * Revalidates every hour
  */
 export default definePage({
   type: "static",
-  revalidate: 60, // Revalidate every minute
+  revalidate: 3600, // Revalidate every hour
   loader: async () => {
     const products = await getAllProducts();
     return { products };
@@ -30,12 +30,13 @@ export default definePage({
             Incremental Static Regeneration
           </h1>
           <p className="text-lg text-muted-foreground">
-            This page is statically generated with ISR. It revalidates every 60
-            seconds. Check the{" "}
+            This page is statically generated with ISR. It revalidates every
+            hour. Check the{" "}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
               X-Cache
             </code>{" "}
-            header in DevTools to see cache status (HIT/STALE/MISS).
+            header in DevTools to see cache status (HIT/STALE/MISS). Check
+            server logs to verify static serving vs rendering.
           </p>
         </div>
 
@@ -53,12 +54,12 @@ export default definePage({
                 )
               </li>
               <li>
-                Subsequent requests: If cache is fresh (&lt; 60s old), served
+                Subsequent requests: If cache is fresh (&lt; 1h old), served
                 from cache (
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                   X-Cache: HIT
                 </code>
-                )
+                ) - no server rendering, pure static serving
               </li>
               <li>
                 Stale cache: If cache is stale, served stale content (

@@ -41,14 +41,20 @@ const processQueue = async (): Promise<void> => {
 
   // Mark as in progress
   inProgress.add(pathname);
+  console.log(
+    `[ISR] 🔄 Starting background revalidation: ${pathname} | In progress: ${inProgress.size}/${MAX_CONCURRENT}`
+  );
 
   try {
     await revalidatePathInternal(pathname);
   } catch (error) {
-    console.error(`Failed to revalidate ${pathname}:`, error);
+    console.error(`[ISR] ❌ Failed to revalidate ${pathname}:`, error);
   } finally {
     // Remove from in-progress set
     inProgress.delete(pathname);
+    console.log(
+      `[ISR] ✅ Completed background revalidation: ${pathname} | Remaining in queue: ${revalidationQueue.length}`
+    );
     // Process next item in queue
     processQueue();
   }
@@ -58,11 +64,15 @@ const processQueue = async (): Promise<void> => {
  * Internal revalidation logic
  */
 const revalidatePathInternal = async (pathname: string): Promise<void> => {
+  console.log(`[ISR] 🔄 Revalidating: ${pathname}`);
+
   const routeTree = getRouteTree();
   const matchResult = matchRoute(pathname, routeTree.routes);
 
   if (!matchResult) {
-    console.warn(`No route found for ${pathname}, skipping revalidation`);
+    console.warn(
+      `[ISR] ⚠️  No route found for ${pathname}, skipping revalidation`
+    );
     return;
   }
 
@@ -71,7 +81,7 @@ const revalidatePathInternal = async (pathname: string): Promise<void> => {
   // Only revalidate static pages with revalidate configured
   if (routeInfo.pageType !== "static" || !routeInfo.revalidate) {
     console.warn(
-      `Route ${pathname} is not ISR-enabled (type: ${routeInfo.pageType}, revalidate: ${routeInfo.revalidate})`
+      `[ISR] ⚠️  Route ${pathname} is not ISR-enabled (type: ${routeInfo.pageType}, revalidate: ${routeInfo.revalidate})`
     );
     return;
   }
@@ -87,6 +97,7 @@ const revalidatePathInternal = async (pathname: string): Promise<void> => {
 
   // Load page component to check for loader
   const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+  console.log(`[ISR] 📦 Loading module: ${resolvedPagePath}`);
   const pageModule = await import(resolvedPagePath);
   const PageComponent = pageModule.default;
 
@@ -99,12 +110,21 @@ const revalidatePathInternal = async (pathname: string): Promise<void> => {
   if (hasPageConfig(PageComponent)) {
     const config = getPageConfig(PageComponent);
     if (config.loader) {
+      console.log(
+        `[ISR] 📥 Loading data for revalidation: ${pathname}`,
+        params
+      );
       pageData = await config.loader(params);
+      console.log(`[ISR] ✅ Data loaded for revalidation: ${pathname}`);
     }
   }
 
   // Render the page
+  console.log(`[ISR] 🖼️  Rendering HTML for revalidation: ${pathname}`);
   const html = await renderRouteToString(routeInfo, pageData, params);
+  console.log(
+    `[ISR] ✅ HTML rendered for revalidation: ${pathname} (${Math.round(html.length / 1024)}KB)`
+  );
 
   // Update cache
   await setCache(pathname, {
@@ -113,7 +133,9 @@ const revalidatePathInternal = async (pathname: string): Promise<void> => {
     revalidate: routeInfo.revalidate,
   });
 
-  console.log(`✅ Revalidated: ${pathname}`);
+  console.log(
+    `[ISR] ✅ Revalidated and cached: ${pathname} | Revalidate: ${routeInfo.revalidate}s`
+  );
 };
 
 /**
@@ -122,9 +144,15 @@ const revalidatePathInternal = async (pathname: string): Promise<void> => {
 export const queueRevalidation = (pathname: string): void => {
   // Skip if already in queue or in progress
   if (revalidationQueue.includes(pathname) || inProgress.has(pathname)) {
+    console.log(
+      `[ISR] ⏭️  Revalidation already queued/in-progress, skipping: ${pathname}`
+    );
     return;
   }
 
+  console.log(
+    `[ISR] 📋 Queued for background revalidation: ${pathname} | Queue size: ${revalidationQueue.length + 1} | In progress: ${inProgress.size}`
+  );
   revalidationQueue.push(pathname);
   // Trigger queue processing
   processQueue();
@@ -136,14 +164,17 @@ export const queueRevalidation = (pathname: string): void => {
  */
 export const revalidatePath = async (pathname: string): Promise<boolean> => {
   try {
+    console.log(`[ISR] 🚀 On-demand revalidation triggered: ${pathname}`);
     // Invalidate existing cache first
     await invalidateCache(pathname);
+    console.log(`[ISR] 🗑️  Cache invalidated: ${pathname}`);
 
     // Revalidate immediately
     await revalidatePathInternal(pathname);
+    console.log(`[ISR] ✅ On-demand revalidation completed: ${pathname}`);
     return true;
   } catch (error) {
-    console.error(`Failed to revalidate ${pathname}:`, error);
+    console.error(`[ISR] ❌ Failed to revalidate ${pathname}:`, error);
     return false;
   }
 };
