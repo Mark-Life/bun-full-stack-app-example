@@ -335,6 +335,41 @@ const serveChunk = (pathname: string): Response | null => {
 };
 
 /**
+ * Serve sourcemap files (.map) if they exist
+ * Returns null if file doesn't exist (will fall through to 404)
+ */
+const serveSourcemap = (pathname: string): Response | null => {
+  // Only handle .map files
+  if (!pathname.endsWith(".map")) {
+    return null;
+  }
+
+  const filename = pathname.split("/").pop();
+  if (!filename) {
+    return null;
+  }
+
+  // Check if sourcemap exists in dist/
+  const sourcemapPath = join(process.cwd(), "dist", filename);
+  if (existsSync(sourcemapPath)) {
+    const file = Bun.file(sourcemapPath);
+    const cacheHeaders = getCacheHeaders(true); // Sourcemaps can be cached like chunks
+    return new Response(file, {
+      headers: {
+        "Content-Type": "application/json",
+        ...cacheHeaders,
+      },
+    });
+  }
+
+  // Sourcemap doesn't exist - return 404 without logging (normal in production)
+  return new Response("Source map not found", {
+    status: 404,
+    headers: { "Content-Type": "text/plain" },
+  });
+};
+
+/**
  * Try to serve with ISR (cache-aware serving)
  */
 const tryServeWithISR = async (pathname: string): Promise<Response | null> => {
@@ -483,6 +518,12 @@ const serverConfig = {
     "/*": async (req: Request) => {
       const url = new URL(req.url);
       const pathname = url.pathname;
+
+      // Serve sourcemaps first (before chunks, to avoid route matching)
+      const sourcemapResponse = serveSourcemap(pathname);
+      if (sourcemapResponse) {
+        return sourcemapResponse;
+      }
 
       // Serve code-split chunks (production only)
       const chunkResponse = serveChunk(pathname);
@@ -703,6 +744,12 @@ const reloadRoutes = async (): Promise<void> => {
         "/*": async (req) => {
           const url = new URL(req.url);
           const pathname = url.pathname;
+
+          // Serve sourcemaps first (before chunks, to avoid route matching)
+          const sourcemapResponse = serveSourcemap(pathname);
+          if (sourcemapResponse) {
+            return sourcemapResponse;
+          }
 
           // Serve code-split chunks (production only)
           const chunkResponse = serveChunk(pathname);
