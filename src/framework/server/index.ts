@@ -313,7 +313,7 @@ const serveChunk = (pathname: string): Response | null => {
     return null;
   }
 
-  // Skip known entry points
+  // Skip known entry points (they're handled by specific routes)
   if (filename === "hydrate.js" || filename === "server.js") {
     return null;
   }
@@ -331,7 +331,12 @@ const serveChunk = (pathname: string): Response | null => {
     });
   }
 
-  return null;
+  // Chunk not found - return 404 immediately (don't fall through to route matching)
+  // This prevents route rendering errors for missing chunks
+  return new Response("Chunk not found", {
+    status: 404,
+    headers: { "Content-Type": "text/plain" },
+  });
 };
 
 /**
@@ -462,14 +467,32 @@ const serverConfig = {
       return new Response("HMR WebSocket endpoint", { status: 200 });
     },
 
-    "/hydrate.js": async () => {
+    "/hydrate.js": async (req: Request) => {
       try {
         const bundle = await buildHydrateBundle();
         const cacheHeaders = getCacheHeaders(false);
+
+        // Add ETag for cache validation
+        // This allows browsers to revalidate instead of using stale cache
+        const ifNoneMatch = req.headers.get("If-None-Match");
+        // Simple hash-based ETag (in production, use file hash)
+        const etag = `"${bundle.length}-${Date.now()}"`;
+
+        if (ifNoneMatch === etag) {
+          return new Response(null, {
+            status: 304,
+            headers: {
+              ...cacheHeaders,
+              ETag: etag,
+            },
+          });
+        }
+
         return new Response(bundle, {
           headers: {
             "Content-Type": "application/javascript",
             ...cacheHeaders,
+            ETag: etag,
           },
         });
       } catch (error) {
@@ -688,14 +711,30 @@ const reloadRoutes = async (): Promise<void> => {
           return new Response("HMR WebSocket upgrade failed", { status: 400 });
         },
 
-        "/hydrate.js": async () => {
+        "/hydrate.js": async (req: Request) => {
           try {
             const bundle = await buildHydrateBundle();
             const cacheHeaders = getCacheHeaders(false);
+
+            // Add ETag for cache validation
+            const ifNoneMatch = req.headers.get("If-None-Match");
+            const etag = `"${bundle.length}-${Date.now()}"`;
+
+            if (ifNoneMatch === etag) {
+              return new Response(null, {
+                status: 304,
+                headers: {
+                  ...cacheHeaders,
+                  ETag: etag,
+                },
+              });
+            }
+
             return new Response(bundle, {
               headers: {
                 "Content-Type": "application/javascript",
                 ...cacheHeaders,
+                ETag: etag,
               },
             });
           } catch (error) {
