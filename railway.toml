@@ -1,9 +1,9 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "NODE_ENV=production bun run build.ts"
+buildCommand = "bun run build"
 
 [deploy]
-startCommand = "NODE_ENV=production bun --bun src/framework/server/index.ts"
+startCommand = "bun run start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"

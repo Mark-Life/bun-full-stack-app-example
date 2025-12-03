@@ -535,6 +535,47 @@ const buildHydrateBundle = async () => {
 };
 
 /**
+ * Build server bundle
+ */
+const buildServerBundle = async () => {
+  console.log("🔨 Building server bundle...");
+  const result = await Bun.build({
+    entrypoints: ["./src/framework/server/index.ts"],
+    target: "bun",
+    minify: true,
+    sourcemap: cliConfig.sourcemap || "linked",
+    // Note: Dynamic imports for route modules will be resolved at runtime
+    // Bun's bundler handles TypeScript path aliases (@/, ~/) automatically
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+      ...cliConfig.define,
+    },
+  });
+
+  if (!result.success) {
+    console.error("❌ Failed to build server bundle:", result.logs);
+    throw new Error("Failed to build server bundle");
+  }
+
+  const output = result.outputs[0];
+  if (!output) {
+    throw new Error("No output from server bundle build");
+  }
+
+  // Write server.js to dist root
+  const serverDest = path.join(outdir, "server.js");
+  const bundleContent = await output.text();
+  await Bun.write(serverDest, bundleContent);
+  outputs.push({
+    File: path.relative(process.cwd(), serverDest),
+    Type: output.kind,
+    Size: formatFileSize(output.size),
+  });
+
+  console.log("✅ Server bundle built\n");
+};
+
+/**
  * Build CSS bundle
  */
 const buildCssBundle = async () => {
@@ -774,6 +815,7 @@ const preRenderStaticPages = async (
 };
 
 // Build all assets
+await buildServerBundle();
 await buildHydrateBundle();
 await buildCssBundle();
 await copyPublicAssets();
