@@ -16,6 +16,7 @@ import { queueRevalidation } from "./revalidate";
 import {
   getNotFoundRouteInfo,
   getRouteTree,
+  initializeRouteTree,
   matchAndExecuteRouteHandler,
   matchAndRenderRoute,
   rediscoverRoutes,
@@ -109,6 +110,11 @@ const buildCssBundle = async (): Promise<string> => {
 };
 
 /**
+ * Initialize route tree at startup (before server starts)
+ */
+await initializeRouteTree();
+
+/**
  * Discover public assets at startup
  */
 const publicAssets = await discoverPublicAssets("./src/public");
@@ -130,32 +136,40 @@ log("API routes:", Object.keys(apiHandlers));
 const wrappedApiHandlers = applyMiddleware(middlewareConfig, apiHandlers);
 
 /**
- * Pre-loaded route modules cache
+ * Pre-loaded route modules cache (loaded once at startup)
  */
 let routeModulesRef: Map<string, { default: unknown }> | null = null;
 
 /**
- * Get route modules (pre-loaded at startup)
+ * Load route modules at startup (called once before server starts)
  */
-const getRouteModules = async (): Promise<
-  Map<string, { default: unknown }>
-> => {
+const loadRouteModules = async (): Promise<void> => {
   if (routeModulesRef) {
-    return routeModulesRef;
+    return;
   }
 
   try {
     const module = await import("./route-modules.generated");
     routeModulesRef = module.routeModules;
-    return routeModulesRef;
   } catch {
     // Fallback: generate the file if it doesn't exist
     const routeTree = getRouteTree();
     generateRouteModulesFile(routeTree);
     const module = await import("./route-modules.generated");
     routeModulesRef = module.routeModules;
-    return routeModulesRef;
   }
+};
+
+/**
+ * Get route modules (must be pre-loaded at startup)
+ */
+const getRouteModules = (): Map<string, { default: unknown }> => {
+  if (!routeModulesRef) {
+    throw new Error(
+      "Route modules not loaded. This should never happen - modules must be loaded at startup."
+    );
+  }
+  return routeModulesRef;
 };
 
 /**
@@ -169,7 +183,7 @@ const renderAndCache = async (
   log(`[ISR] 🎨 RENDERING PAGE: ${pathname} | Params:`, params);
 
   // Get pre-loaded route modules
-  const routeModules = await getRouteModules();
+  const routeModules = getRouteModules();
   const pageModule = routeModules.get(routeInfo.filePath);
   if (!pageModule) {
     throw new Error(`No module found for ${routeInfo.filePath}`);
@@ -454,8 +468,8 @@ if (process.env.NODE_ENV !== "production") {
 const initialRouteTree = getRouteTree();
 generateRouteModulesFile(initialRouteTree);
 
-// Pre-load route modules at startup
-await getRouteModules();
+// Pre-load route modules at startup (before server starts handling requests)
+await loadRouteModules();
 
 log(`🚀 Server running at ${server.url}`);
 
@@ -465,7 +479,7 @@ log(`🚀 Server running at ${server.url}`);
 const reloadRoutes = async (): Promise<void> => {
   try {
     // Rediscover routes first
-    const newRouteTree = rediscoverRoutes();
+    const newRouteTree = await rediscoverRoutes();
 
     // Regenerate static imports module (enables Bun --hot tracking)
     generateRouteModulesFile(newRouteTree);
@@ -475,7 +489,7 @@ const reloadRoutes = async (): Promise<void> => {
     // Clear route modules reference to force reload
     routeModulesRef = null;
     // Pre-load fresh route modules
-    await getRouteModules();
+    await loadRouteModules();
 
     // Regenerate route types (for client-side typesafe links)
     await generateRouteTypes();
@@ -662,7 +676,7 @@ if (process.env.NODE_ENV !== "production") {
       watch(
         componentsDir,
         { recursive: true },
-        (eventType: string, filename: string | null) => {
+        async (eventType: string, filename: string | null) => {
           if (!filename || eventType !== "change") {
             return;
           }
@@ -671,7 +685,7 @@ if (process.env.NODE_ENV !== "production") {
           if (filename.endsWith(".tsx") || filename.endsWith(".ts")) {
             log(`📝 Detected change in component: ${filename}`);
             // Rediscover routes in case "use client" was added/removed
-            rediscoverRoutes();
+            await rediscoverRoutes();
             generateRouteModulesFile(getRouteTree());
             clearModuleCache();
             hydrateBundleCache = null;

@@ -375,7 +375,7 @@ const printTree = (node: TreeNode, prefix = "", isLast = true): void => {
  * Display routes in a tree structure similar to Next.js
  */
 const displayRouteStructure = (
-  discoveredRoutes: ReturnType<typeof discoverRoutes>
+  discoveredRoutes: Awaited<ReturnType<typeof discoverRoutes>>
 ) => {
   const { routes, routeHandlers } = discoveredRoutes;
 
@@ -417,7 +417,7 @@ const outdir = cliConfig.outdir || path.join(process.cwd(), "dist");
 
 // Generate route types for type-safe Link component
 console.log("📝 Generating route types...");
-const routeTree = discoverRoutes("./src/app");
+const routeTree = await discoverRoutes("./src/app");
 const routeTypesPath = path.join(
   process.cwd(),
   "src/framework/shared/routes.generated.ts"
@@ -743,7 +743,7 @@ const processStaticRoute = async (
  * Pre-render static pages at build time
  */
 const preRenderStaticPages = async (
-  discoveredRoutes: ReturnType<typeof discoverRoutes>
+  discoveredRoutes: Awaited<ReturnType<typeof discoverRoutes>>
 ) => {
   console.log("📄 Pre-rendering static pages...");
 

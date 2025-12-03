@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import {
   extractPageType,
@@ -416,25 +417,31 @@ interface ScanDirectoryOptions {
 }
 
 /**
- * Recursively scan directory for routes
+ * Recursively scan directory for routes (async)
  */
-const scanDirectory = (options: ScanDirectoryOptions): void => {
+const scanDirectory = async (options: ScanDirectoryOptions): Promise<void> => {
   const { dir, appDir, routes, routeHandlers, layouts } = options;
 
   if (!existsSync(dir)) {
     return;
   }
 
-  const entries = readdirSync(dir);
+  const entries = await readdir(dir);
 
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const statResult = await stat(fullPath);
 
-    if (stat.isDirectory()) {
+    if (statResult.isDirectory()) {
       // Recursively scan subdirectories
-      scanDirectory({ dir: fullPath, appDir, routes, routeHandlers, layouts });
-    } else if (stat.isFile()) {
+      await scanDirectory({
+        dir: fullPath,
+        appDir,
+        routes,
+        routeHandlers,
+        layouts,
+      });
+    } else if (statResult.isFile()) {
       if (isRouteHandlerFile(entry)) {
         processRouteHandlerFile(fullPath, appDir, routeHandlers);
       } else if (isRouteFile(entry)) {
@@ -462,9 +469,11 @@ const toImportPath = (filePath: string, baseDir: string): string => {
 };
 
 /**
- * Discover all routes in the app directory
+ * Discover all routes in the app directory (async)
  */
-export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
+export const discoverRoutes = async (
+  appDir = "./src/app"
+): Promise<RouteTree> => {
   const routes = new Map<string, RouteInfo>();
   const routeHandlers = new Map<string, RouteHandlerInfo>();
   const layouts = new Map<string, string>();
@@ -482,7 +491,7 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
     return { routes, routeHandlers, layouts };
   }
 
-  scanDirectory({
+  await scanDirectory({
     dir: resolvedAppDir,
     appDir: resolvedAppDir,
     routes,

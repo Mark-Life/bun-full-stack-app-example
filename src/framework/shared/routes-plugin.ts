@@ -347,7 +347,7 @@ export const routesPlugin: BunPlugin = {
     // Generate the routes module when virtual:routes is loaded
     build.onLoad(
       { filter: VIRTUAL_ROUTES_LOAD_FILTER, namespace: "virtual-routes" },
-      () => {
+      async () => {
         // Ensure we're resolving paths from the correct directory
         const cwd = process.cwd();
 
@@ -359,7 +359,7 @@ export const routesPlugin: BunPlugin = {
           );
         }
 
-        const routeTree = discoverRoutes("./src/app");
+        const routeTree = await discoverRoutes("./src/app");
         const routes = routeTree.routes;
 
         // First pass: collect all layouts and determine types

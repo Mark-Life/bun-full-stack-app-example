@@ -33,19 +33,36 @@ const LAYOUT_FILE = "layout.tsx";
 /**
  * Mutable route tree that can be updated during development
  */
-let routeTree = discoverRoutes("./src/app");
-log(`📁 Discovered ${routeTree.routes.size} routes`);
+let routeTree: RouteTree | null = null;
 
 /**
- * Get the route tree
+ * Initialize route tree (must be called at startup before server starts)
  */
-export const getRouteTree = (): RouteTree => routeTree;
+export const initializeRouteTree = async (): Promise<void> => {
+  if (routeTree) {
+    return;
+  }
+  routeTree = await discoverRoutes("./src/app");
+  log(`📁 Discovered ${routeTree.routes.size} routes`);
+};
+
+/**
+ * Get the route tree (must be initialized first)
+ */
+export const getRouteTree = (): RouteTree => {
+  if (!routeTree) {
+    throw new Error(
+      "Route tree not initialized. Call initializeRouteTree() at startup."
+    );
+  }
+  return routeTree;
+};
 
 /**
  * Rediscover routes (useful for dev mode hot reloading)
  */
-export const rediscoverRoutes = (): RouteTree => {
-  routeTree = discoverRoutes("./src/app");
+export const rediscoverRoutes = async (): Promise<RouteTree> => {
+  routeTree = await discoverRoutes("./src/app");
   log(
     `🔄 Rediscovered ${routeTree.routes.size} routes, ${routeTree.routeHandlers.size} route handlers`
   );

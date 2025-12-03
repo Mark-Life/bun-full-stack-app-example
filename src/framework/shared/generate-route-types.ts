@@ -55,7 +55,7 @@ export const generateRouteTypes = async (
   outputPath?: string,
   silent = false
 ): Promise<void> => {
-  const routeTree = discoverRoutes("./src/app");
+  const routeTree = await discoverRoutes("./src/app");
   const routes = routeTree.routes;
 
   // Convert all route paths to TypeScript types
