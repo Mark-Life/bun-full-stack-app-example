@@ -494,17 +494,21 @@ const copyPublicAssets = async () => {
 };
 
 /**
- * Build hydration bundle
+ * Build hydration bundle with code splitting
+ * Note: CSS is built separately via buildCssBundle(), so we don't include
+ * the tailwind plugin here to avoid CSS chunk collisions during splitting
  */
 const buildHydrateBundle = async () => {
   console.log("🔨 Building hydration bundle...");
-  const tailwindPlugin = await import("bun-plugin-tailwind");
   const result = await Bun.build({
     entrypoints: ["./src/framework/client/hydrate.tsx"],
-    plugins: [tailwindPlugin.default || tailwindPlugin, routesPlugin],
+    outdir, // Required for code splitting
+    splitting: true, // Enable code splitting for lazy-loaded routes
+    plugins: [routesPlugin],
     target: "browser",
     minify: true,
     sourcemap: cliConfig.sourcemap || "linked",
+    external: ["*.css"], // CSS is built separately via buildCssBundle
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
       ...cliConfig.define,
@@ -516,22 +520,47 @@ const buildHydrateBundle = async () => {
     throw new Error("Failed to build hydrate bundle");
   }
 
-  const output = result.outputs[0];
-  if (!output) {
+  if (result.outputs.length === 0) {
     throw new Error("No output from hydrate bundle build");
   }
 
-  // Write hydrate.js to dist root
-  const hydrateDest = path.join(outdir, "hydrate.js");
-  const bundleContent = await output.text();
-  await Bun.write(hydrateDest, bundleContent);
-  outputs.push({
-    File: path.relative(process.cwd(), hydrateDest),
-    Type: output.kind,
-    Size: formatFileSize(output.size),
-  });
+  // With code splitting enabled, Bun writes files directly to outdir
+  // Track entry point separately, summarize chunks
+  let entryPointFound = false;
+  let chunksCount = 0;
+  let chunksTotalSize = 0;
 
-  console.log("✅ Hydration bundle built\n");
+  for (const output of result.outputs) {
+    if (output.path.endsWith("hydrate.js")) {
+      entryPointFound = true;
+      outputs.push({
+        File: path.relative(process.cwd(), output.path),
+        Type: output.kind,
+        Size: formatFileSize(output.size),
+      });
+    } else {
+      // Aggregate chunk stats
+      chunksCount += 1;
+      chunksTotalSize += output.size;
+    }
+  }
+
+  if (!entryPointFound) {
+    throw new Error("Entry point hydrate.js not found in build outputs");
+  }
+
+  // Add summary row for chunks
+  if (chunksCount > 0) {
+    outputs.push({
+      File: `dist/*.js (${chunksCount} chunks)`,
+      Type: "chunks",
+      Size: formatFileSize(chunksTotalSize),
+    });
+  }
+
+  console.log(
+    `✅ Hydration bundle built (${result.outputs.length} file${result.outputs.length === 1 ? "" : "s"})\n`
+  );
 };
 
 /**
