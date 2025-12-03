@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { type ServerWebSocket, serve } from "bun";
 import { routesPlugin } from "@/framework/shared/routes-plugin";
 import { api } from "~/api";
+import {
+  type ChunkManifest,
+  setChunkManifest,
+} from "~/framework/shared/chunk-manifest";
 import { generateRouteTypes } from "~/framework/shared/generate-route-types";
 import { applyMiddleware } from "~/framework/shared/middleware";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
@@ -114,6 +118,33 @@ const buildCssBundle = async (): Promise<string> => {
  * Initialize route tree at startup (before server starts)
  */
 await initializeRouteTree();
+
+/**
+ * Load chunk manifest from dist/chunk-manifest.json (production only)
+ */
+const loadChunkManifest = async (): Promise<void> => {
+  if (process.env.NODE_ENV !== "production") {
+    return;
+  }
+
+  try {
+    const manifestPath = join(process.cwd(), "dist", "chunk-manifest.json");
+    if (existsSync(manifestPath)) {
+      const manifestFile = Bun.file(manifestPath);
+      const manifestContent = await manifestFile.text();
+      const manifest = JSON.parse(manifestContent) as ChunkManifest;
+      setChunkManifest(manifest);
+      const routeCount = Object.keys(manifest).length;
+      log(`📋 Loaded chunk manifest: ${routeCount} route(s)`);
+    } else {
+      logWarn("⚠️  Chunk manifest not found - route chunk preloading disabled");
+    }
+  } catch (error) {
+    logWarn("⚠️  Failed to load chunk manifest:", error);
+  }
+};
+
+await loadChunkManifest();
 
 /**
  * Discover public assets at startup

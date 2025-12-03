@@ -66,6 +66,8 @@ interface RootShellProps {
   isStatic?: boolean;
   /** Whether to preload hydration script (for faster TTI) */
   preloadHydration?: boolean;
+  /** Route-specific chunks to preload (for faster TTI) */
+  routeChunks?: Array<{ path: string; size: number }>;
 }
 
 export const RootShell = ({
@@ -76,6 +78,7 @@ export const RootShell = ({
   pageData,
   isStatic = false,
   preloadHydration = true,
+  routeChunks,
 }: RootShellProps) => {
   const title = metadata?.title || "Bun + React";
   const description =
@@ -96,6 +99,14 @@ export const RootShell = ({
   // Determine if we should preload hydration script
   const shouldPreloadHydration = preloadHydration && hasClientComponents;
 
+  // Preload route-specific chunks (sorted by size, largest first for prioritization)
+  const chunkPreloads =
+    routeChunks && routeChunks.length > 0
+      ? routeChunks.map((chunk) => (
+          <link href={chunk.path} key={chunk.path} rel="modulepreload" />
+        ))
+      : null;
+
   return (
     <html lang="en">
       <head>
@@ -109,6 +120,8 @@ export const RootShell = ({
         {shouldPreloadHydration ? (
           <link href="/hydrate.js" rel="modulepreload" />
         ) : null}
+        {/* Preload route-specific chunks for faster TTI (eliminates waterfall) */}
+        {chunkPreloads}
       </head>
       <body>
         <div id="root">{children}</div>

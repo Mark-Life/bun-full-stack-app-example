@@ -1,5 +1,5 @@
 // This file is auto-generated. Do not edit manually.
-// Generated at: 2025-12-03T16:26:18.075Z
+// Generated at: 2025-12-03T16:36:56.689Z
 
 /**
  * Union type of all valid route paths in the application.

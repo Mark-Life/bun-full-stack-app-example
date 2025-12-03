@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToReadableStream, renderToString } from "react-dom/server";
 import type { RouteInfo } from "@/framework/shared/router";
+import { getRouteChunks } from "~/framework/shared/chunk-manifest";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 import {
   type RouteData,
@@ -323,6 +324,7 @@ const buildComponentTree = async (
     needsHydration: boolean;
     pageData?: unknown;
     isStatic?: boolean;
+    routeChunks?: Array<{ path: string; size: number }>;
   }
 ): Promise<React.ReactElement> => {
   let component: React.ReactElement = React.createElement(
@@ -368,6 +370,9 @@ const buildComponentTree = async (
         hasClientComponents: options.needsHydration,
         ...(options.pageData !== undefined && { pageData: options.pageData }),
         ...(options.isStatic !== undefined && { isStatic: options.isStatic }),
+        ...(options.routeChunks !== undefined && {
+          routeChunks: options.routeChunks,
+        }),
       },
       component
     );
@@ -549,6 +554,9 @@ export const renderRouteToString = async (
       !routeInfo.isDynamic &&
       !routeInfo.hasLoader;
 
+    // Get route chunks for preloading (production only)
+    const routeChunks = getRouteChunks(routeInfo.path);
+
     // Build the component tree
     const component = await buildComponentTree(
       PageComponent,
@@ -559,6 +567,7 @@ export const renderRouteToString = async (
         needsHydration,
         pageData: data !== undefined ? data : undefined,
         isStatic,
+        ...(routeChunks !== undefined && { routeChunks }),
       }
     );
 
@@ -686,6 +695,9 @@ export const renderRoute = async (
       pageProps["data"] = pageData;
     }
 
+    // Get route chunks for preloading (production only)
+    const routeChunks = getRouteChunks(routeInfo.path);
+
     // Build the component tree
     const component = await buildComponentTree(
       PageComponent,
@@ -696,6 +708,7 @@ export const renderRoute = async (
         needsHydration,
         pageData: pageData !== undefined ? pageData : undefined,
         isStatic,
+        ...(routeChunks !== undefined && { routeChunks }),
       }
     );
 

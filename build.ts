@@ -494,6 +494,78 @@ const copyPublicAssets = async () => {
 };
 
 /**
+ * Generate chunk manifest mapping routes to their required chunks
+ * This enables route-specific chunk preloading for faster TTI
+ */
+const generateChunkManifest = async (
+  buildChunks: Array<{ path: string; size: number; relativePath: string }>,
+  discoveredRoutes: Awaited<ReturnType<typeof discoverRoutes>>
+): Promise<void> => {
+  // Only generate manifest in production builds
+  if (process.env.NODE_ENV !== "production") {
+    return;
+  }
+
+  console.log("📋 Generating chunk manifest...");
+
+  const chunkManifest: Record<
+    string,
+    Array<{ path: string; size: number }>
+  > = {};
+
+  // For each route, determine which chunks it needs
+  // Since Bun's chunking is opaque, we use a heuristic:
+  // Routes that need hydration will load chunks for their page + layouts
+  for (const [routePath, routeInfo] of discoveredRoutes.routes.entries()) {
+    // Only include routes that need hydration (have client components)
+    const needsHydration =
+      routeInfo.isClientComponent ||
+      routeInfo.hasClientBoundaries ||
+      routeInfo.layoutTypes.some((type) => type === "client");
+
+    if (!needsHydration) {
+      continue;
+    }
+
+    // Collect all module paths this route imports
+    const modulePaths = new Set<string>();
+    modulePaths.add(routeInfo.filePath);
+
+    if (routeInfo.layoutPath) {
+      modulePaths.add(routeInfo.layoutPath);
+    }
+
+    for (const parentLayout of routeInfo.parentLayouts) {
+      modulePaths.add(parentLayout);
+    }
+
+    // Try to match chunks to this route's modules
+    // Heuristic: chunks that might contain these modules
+    // For now, we'll include all chunks (less optimal but works)
+    // TODO: Improve by analyzing chunk contents or using Bun's metafile
+    const routeChunks = buildChunks
+      .map((chunk) => ({
+        path: `/${chunk.relativePath}`,
+        size: chunk.size,
+      }))
+      .sort((a, b) => b.size - a.size); // Sort by size descending for prioritization
+
+    if (routeChunks.length > 0) {
+      chunkManifest[routePath] = routeChunks;
+    }
+  }
+
+  // Write manifest to dist/chunk-manifest.json
+  const manifestPath = path.join(outdir, "chunk-manifest.json");
+  await Bun.write(manifestPath, JSON.stringify(chunkManifest, null, 2));
+
+  const manifestRouteCount = Object.keys(chunkManifest).length;
+  console.log(
+    `✅ Generated chunk manifest: ${manifestRouteCount} route(s) -> ${path.relative(process.cwd(), manifestPath)}\n`
+  );
+};
+
+/**
  * Build hydration bundle with code splitting
  * Note: CSS is built separately via buildCssBundle(), so we don't include
  * the tailwind plugin here to avoid CSS chunk collisions during splitting
@@ -529,6 +601,8 @@ const buildHydrateBundle = async () => {
   let entryPointFound = false;
   let chunksCount = 0;
   let chunksTotalSize = 0;
+  const chunks: Array<{ path: string; size: number; relativePath: string }> =
+    [];
 
   for (const output of result.outputs) {
     if (output.path.endsWith("hydrate.js")) {
@@ -539,9 +613,14 @@ const buildHydrateBundle = async () => {
         Size: formatFileSize(output.size),
       });
     } else {
-      // Aggregate chunk stats
+      // Collect chunk info for manifest
       chunksCount += 1;
       chunksTotalSize += output.size;
+      chunks.push({
+        path: output.path,
+        size: output.size,
+        relativePath: path.relative(outdir, output.path),
+      });
     }
   }
 
@@ -561,6 +640,8 @@ const buildHydrateBundle = async () => {
   console.log(
     `✅ Hydration bundle built (${result.outputs.length} file${result.outputs.length === 1 ? "" : "s"})\n`
   );
+
+  return chunks;
 };
 
 /**
@@ -845,9 +926,12 @@ const preRenderStaticPages = async (
 
 // Build all assets
 await buildServerBundle();
-await buildHydrateBundle();
+const chunks = await buildHydrateBundle();
 await buildCssBundle();
 await copyPublicAssets();
+if (chunks) {
+  await generateChunkManifest(chunks, routeTree);
+}
 await preRenderStaticPages(routeTree);
 
 const end = performance.now();
