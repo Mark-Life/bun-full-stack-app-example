@@ -271,6 +271,30 @@ const renderAndCache = async (
 };
 
 /**
+ * Get cache headers for static assets
+ * Chunks have hashes, so they can be cached forever
+ * Entry points need shorter cache or versioning
+ */
+const getCacheHeaders = (isChunk: boolean): Record<string, string> => {
+  const headers: Record<string, string> = {};
+
+  if (process.env.NODE_ENV === "production") {
+    if (isChunk) {
+      // Chunks have content hashes - cache forever
+      headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    } else {
+      // Entry points - shorter cache, allow revalidation
+      headers["Cache-Control"] = "public, max-age=3600, must-revalidate";
+    }
+  } else {
+    // Development - no cache
+    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+  }
+
+  return headers;
+};
+
+/**
  * Serve code-split chunk files (production only)
  * Serves any .js file from dist/ except hydrate.js and server.js
  */
@@ -298,8 +322,12 @@ const serveChunk = (pathname: string): Response | null => {
   const chunkPath = join(process.cwd(), "dist", filename);
   if (existsSync(chunkPath)) {
     const file = Bun.file(chunkPath);
+    const cacheHeaders = getCacheHeaders(true);
     return new Response(file, {
-      headers: { "Content-Type": "application/javascript" },
+      headers: {
+        "Content-Type": "application/javascript",
+        ...cacheHeaders,
+      },
     });
   }
 
@@ -402,8 +430,12 @@ const serverConfig = {
     "/hydrate.js": async () => {
       try {
         const bundle = await buildHydrateBundle();
+        const cacheHeaders = getCacheHeaders(false);
         return new Response(bundle, {
-          headers: { "Content-Type": "application/javascript" },
+          headers: {
+            "Content-Type": "application/javascript",
+            ...cacheHeaders,
+          },
         });
       } catch (error) {
         logError("Error serving hydrate bundle:", error);
@@ -420,15 +452,23 @@ const serverConfig = {
     "/index.css": async () => {
       try {
         const css = await buildCssBundle();
+        const cacheHeaders = getCacheHeaders(false);
         return new Response(css, {
-          headers: { "Content-Type": "text/css" },
+          headers: {
+            "Content-Type": "text/css",
+            ...cacheHeaders,
+          },
         });
       } catch (error) {
         logError("Error serving CSS bundle:", error);
         // Fallback: return raw file if bundling fails
         const file = Bun.file("./src/index.css");
+        const cacheHeaders = getCacheHeaders(false);
         return new Response(file, {
-          headers: { "Content-Type": "text/css" },
+          headers: {
+            "Content-Type": "text/css",
+            ...cacheHeaders,
+          },
         });
       }
     },
@@ -610,8 +650,12 @@ const reloadRoutes = async (): Promise<void> => {
         "/hydrate.js": async () => {
           try {
             const bundle = await buildHydrateBundle();
+            const cacheHeaders = getCacheHeaders(false);
             return new Response(bundle, {
-              headers: { "Content-Type": "application/javascript" },
+              headers: {
+                "Content-Type": "application/javascript",
+                ...cacheHeaders,
+              },
             });
           } catch (error) {
             logError("Error serving hydrate bundle:", error);
@@ -628,15 +672,23 @@ const reloadRoutes = async (): Promise<void> => {
         "/index.css": async () => {
           try {
             const css = await buildCssBundle();
+            const cacheHeaders = getCacheHeaders(false);
             return new Response(css, {
-              headers: { "Content-Type": "text/css" },
+              headers: {
+                "Content-Type": "text/css",
+                ...cacheHeaders,
+              },
             });
           } catch (error) {
             logError("Error serving CSS bundle:", error);
             // Fallback: return raw file if bundling fails
             const file = Bun.file("./src/index.css");
+            const cacheHeaders = getCacheHeaders(false);
             return new Response(file, {
-              headers: { "Content-Type": "text/css" },
+              headers: {
+                "Content-Type": "text/css",
+                ...cacheHeaders,
+              },
             });
           }
         },
