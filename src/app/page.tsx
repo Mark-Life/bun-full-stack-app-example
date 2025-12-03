@@ -51,6 +51,46 @@ const clientNavCode = `defineLayout({
   )
 })`;
 
+const isrCode = `definePage({
+  type: 'static',
+  revalidate: 3600, // Revalidate every hour
+  loader: async () => ({
+    products: await fetchProducts()
+  }),
+  component: ({ data }) => (
+    <div>{data.products.map(...)}</div>
+  )
+})`;
+
+const apiRouteCode = `// Define route
+import { route } from "~/framework/shared/api";
+import { z } from "zod";
+
+export const byId = route({
+  method: "GET",
+  params: z.object({ id: z.string() }),
+  response: z.object({ id: z.string(), name: z.string() }),
+  handler: ({ params }) => getUser(params.id),
+});
+
+// Compose API
+import { createAPI } from "~/framework/shared/api";
+export const api = createAPI({
+  users: { byId, create }
+});`;
+
+const middlewareCode = `import { defineMiddleware } from "~/framework/shared/middleware";
+
+export default defineMiddleware({
+  exclude: ["/favicon.ico", "/*.svg"],
+  handler: async (request, next) => {
+    console.log(\`\${request.method} \${request.url}\`);
+    const response = await next();
+    // Modify response headers, etc.
+    return response;
+  },
+});`;
+
 /**
  * Code examples section with syntax highlighting
  */
@@ -92,6 +132,46 @@ const CodeExamples = () => (
         <SystemThemeWrapper>
           <CodeBlock code={clientNavCode} language="tsx">
             <CodeBlockCopyButton code={clientNavCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base sm:text-lg">
+          Incremental Static Regeneration
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={isrCode} language="typescript">
+            <CodeBlockCopyButton code={isrCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base sm:text-lg">
+          Typesafe API Routes
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={apiRouteCode} language="typescript">
+            <CodeBlockCopyButton code={apiRouteCode} />
+          </CodeBlock>
+        </SystemThemeWrapper>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base sm:text-lg">Middleware</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SystemThemeWrapper>
+          <CodeBlock code={middlewareCode} language="typescript">
+            <CodeBlockCopyButton code={middlewareCode} />
           </CodeBlock>
         </SystemThemeWrapper>
       </CardContent>

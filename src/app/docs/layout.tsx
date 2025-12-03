@@ -27,9 +27,9 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
             <CardContent className="space-y-2">
               {docLinks.map((link) => (
                 <Link
-                  key={link.href}
                   className="block text-muted-foreground hover:text-foreground hover:underline"
                   href={link.href}
+                  key={link.href}
                 >
                   {link.label}
                 </Link>

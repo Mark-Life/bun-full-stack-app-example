@@ -17,7 +17,7 @@ export default function DocsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Documentation</CardTitle>
+          <CardTitle className="font-bold text-3xl">Documentation</CardTitle>
           <CardDescription>
             Complete guide to building with Bun React Framework
           </CardDescription>

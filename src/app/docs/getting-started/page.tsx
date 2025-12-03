@@ -17,7 +17,7 @@ export default function GettingStartedPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Getting Started</CardTitle>
+          <CardTitle className="font-bold text-3xl">Getting Started</CardTitle>
           <CardDescription>
             Learn how to build with Bun React Framework
           </CardDescription>
@@ -26,7 +26,7 @@ export default function GettingStartedPage() {
           <section>
             <h2 className="mb-4 font-semibold text-2xl">Installation</h2>
             <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-              <code>{`bun install`}</code>
+              <code>{"bun install"}</code>
             </pre>
           </section>
 
