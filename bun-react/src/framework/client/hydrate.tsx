@@ -170,6 +170,36 @@ const getRouteData = (): {
 };
 
 /**
+ * Load RSC payload from embedded script
+ * Sets a global variable that cached components can access synchronously
+ */
+const loadRSCPayload = (): void => {
+  const script = document.getElementById("__RSC_PAYLOAD__");
+  console.log("[RSC] Looking for payload script:", !!script);
+  if (script?.textContent) {
+    try {
+      // Parse and set globally so cached components can access synchronously
+      const payload = JSON.parse(script.textContent);
+      if (payload?.components) {
+        // Set on window for immediate access
+        (
+          window as unknown as { __RSC_LOADED_PAYLOAD__: unknown }
+        ).__RSC_LOADED_PAYLOAD__ = payload;
+        console.log(
+          "[RSC] Loaded payload with",
+          Object.keys(payload.components).length,
+          "cached components"
+        );
+      }
+    } catch (error) {
+      console.warn("[RSC] Failed to load payload:", error);
+    }
+  } else {
+    console.log("[RSC] No payload script found");
+  }
+};
+
+/**
  * Check if a route needs hydration
  * Returns true if the page or any layout is a client component
  */
@@ -196,6 +226,10 @@ const needsHydration = (route: RouteConfig): boolean => {
  * Hydrate the application
  */
 const hydrate = () => {
+  // Load RSC payload first (for cached components)
+  // This is sync but triggers async import internally
+  loadRSCPayload();
+
   const root = document.getElementById("root");
   if (!root) {
     console.error("Root element not found");

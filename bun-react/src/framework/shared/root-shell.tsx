@@ -2,6 +2,7 @@
  * Root HTML shell component that wraps all pages
  * Handles metadata injection, default styles, and hydration script
  */
+
 export interface Metadata {
   title?: string;
   description?: string;
@@ -69,6 +70,7 @@ export const RootShell = ({
           id="__ROUTE_DATA__"
           type="application/json"
         />
+        {/* RSC Payload placeholder - injected at stream level after all components render */}
         {/* Hydration script is injected via bootstrapModules in renderToReadableStream */}
         {process.env.NODE_ENV !== "production" && (
           <script

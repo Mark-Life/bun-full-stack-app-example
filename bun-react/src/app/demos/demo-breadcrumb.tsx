@@ -15,6 +15,7 @@ const DEMOS = [
   { path: "/demos/api", label: "API" },
   { path: "/demos/client-nav", label: "Client Navigation" },
   { path: "/demos/isr", label: "ISR" },
+  { path: "/demos/ppr", label: "PPR" },
   { path: "/demos/ssr", label: "SSR" },
   { path: "/demos/static", label: "Static" },
   { path: "/demos/suspense", label: "Suspense" },

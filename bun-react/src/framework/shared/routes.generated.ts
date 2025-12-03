@@ -1,5 +1,5 @@
 // This file is auto-generated. Do not edit manually.
-// Generated at: 2025-12-03T10:58:02.341Z
+// Generated at: 2025-12-03T12:22:36.427Z
 
 /**
  * Union type of all valid route paths in the application.
@@ -22,6 +22,7 @@ export type ValidRoutes =
   | "/demos/client-nav/settings"
   | "/demos/isr"
   | "/demos/isr/admin"
+  | "/demos/ppr"
   | "/demos/ssr"
   | "/demos/static"
   | "/demos/suspense"

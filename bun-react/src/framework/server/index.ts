@@ -11,7 +11,13 @@ import middlewareConfig from "~/middleware";
 import { getFromCache, isStale, setCache } from "./cache";
 import { generateRouteModulesFile } from "./generate-route-modules";
 import { discoverPublicAssets } from "./public";
-import { clearModuleCache, renderRoute, renderRouteToString } from "./render";
+import {
+  clearModuleCache,
+  hasShell,
+  loadShell,
+  renderRoute,
+  renderRouteToString,
+} from "./render";
 import { queueRevalidation } from "./revalidate";
 import {
   getNotFoundRouteInfo,
@@ -127,6 +133,67 @@ const renderAndCache = async (
   }
 
   return html;
+};
+
+/**
+ * Try to serve with PPR (Partial Prerendering)
+ *
+ * For routes WITH Suspense boundaries:
+ * - Use renderToReadableStream directly (regular SSR)
+ * - React naturally streams shell first (with fallbacks), then resolved content
+ * - This IS PPR behavior - the static parts render instantly, dynamic streams in
+ *
+ * For routes WITHOUT Suspense (fully static):
+ * - Serve pre-rendered shell directly
+ *
+ * The key insight: React's renderToReadableStream already does PPR!
+ * It sends the shell (everything outside Suspense) immediately,
+ * then streams Suspense content as it resolves.
+ */
+const tryServeWithPPR = async (pathname: string): Promise<Response | null> => {
+  // Check if shell exists
+  if (!hasShell(pathname)) {
+    return null;
+  }
+
+  const routeTree = getRouteTree();
+  const matchResult = matchRoute(pathname, routeTree.routes);
+
+  if (!matchResult) {
+    return null;
+  }
+
+  // Routes with Suspense: use regular SSR streaming
+  // React's renderToReadableStream naturally implements PPR behavior:
+  // - Sends static shell with fallbacks immediately
+  // - Streams resolved Suspense content as it becomes ready
+  if (matchResult.route.hasSuspenseBoundaries === true) {
+    // Use renderRoute which uses renderToReadableStream
+    // This provides natural PPR behavior without manual compositing
+    const response = await renderRoute(matchResult.route, matchResult.params);
+
+    // Add PPR header to indicate this route supports PPR
+    const headers = new Headers(response.headers);
+    headers.set("X-PPR", "streaming");
+
+    return new Response(response.body, {
+      status: response.status,
+      headers,
+    });
+  }
+
+  // No Suspense boundaries - serve pre-rendered shell directly
+  const shellHtml = await loadShell(pathname);
+  if (!shellHtml) {
+    return null;
+  }
+
+  return new Response(shellHtml, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "X-Cache": "PPR",
+    },
+  });
 };
 
 /**
@@ -280,6 +347,12 @@ const serverConfig = {
       if (skipPaths.some((p) => pathname.startsWith(p))) {
         // Let other handlers deal with these
         return new Response("Not found", { status: 404 });
+      }
+
+      // Try PPR first (shell + dynamic streaming)
+      const pprResponse = await tryServeWithPPR(pathname);
+      if (pprResponse) {
+        return pprResponse;
       }
 
       // Try ISR-aware serving (cache-first, then pre-rendered, then SSR)

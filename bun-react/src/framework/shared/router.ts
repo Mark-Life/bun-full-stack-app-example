@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import {
   extractPageType,
@@ -31,6 +31,10 @@ const CATCH_ALL_PATTERN = /^\[\.\.\.(\w+)\]$/;
 const DYNAMIC_PATTERN = /^\[(\w+)\]$/;
 const FILE_EXTENSION_PATTERN = /\.(tsx|ts|jsx|js)$/;
 const TRAILING_SLASH_PATTERN = /\/$/;
+const SUSPENSE_JSX_PATTERN = /<Suspense[\s>]/;
+const SUSPENSE_IMPORT_PATTERN = /import.*Suspense.*from\s+['"]react['"]/;
+const SUSPENSE_FROM_PATTERN = /from\s+['"]react['"].*Suspense/;
+const REACT_SUSPENSE_PATTERN = /React\.Suspense/;
 
 export interface RouteInfo {
   path: string;
@@ -55,6 +59,8 @@ export interface RouteInfo {
   clientNavigable: boolean;
   /** ISR revalidation interval in seconds. Undefined = no ISR */
   revalidate?: number;
+  /** Whether the route has Suspense boundaries (for PPR) */
+  hasSuspenseBoundaries?: boolean;
 }
 
 export interface RouteTree {
@@ -72,6 +78,33 @@ const isRouteFile = (filename: string): boolean =>
  * Check if a file is a layout file
  */
 const isLayoutFile = (filename: string): boolean => filename === LAYOUT_FILE;
+
+/**
+ * Check if a file has Suspense boundaries
+ * Detects <Suspense> usage in the component tree
+ */
+const hasSuspenseBoundariesSync = (filePath: string): boolean => {
+  if (!existsSync(filePath)) {
+    return false;
+  }
+
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    // Look for Suspense usage patterns:
+    // - <Suspense> JSX
+    // - Suspense from 'react'
+    // - React.Suspense
+    const hasSuspenseJSX = SUSPENSE_JSX_PATTERN.test(content);
+    const hasSuspenseImport =
+      SUSPENSE_IMPORT_PATTERN.test(content) ||
+      SUSPENSE_FROM_PATTERN.test(content);
+    const hasReactSuspense = REACT_SUSPENSE_PATTERN.test(content);
+
+    return hasSuspenseJSX || hasSuspenseImport || hasReactSuspense;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Extract dynamic segments from a path segment
@@ -280,6 +313,14 @@ const processRouteFile = (
   const hasLoaderFn = hasLoader(fullPath);
   const revalidateValue = extractRevalidate(fullPath);
 
+  // Check if route has Suspense boundaries (for PPR)
+  const hasSuspense = hasSuspenseBoundariesSync(fullPath);
+  // Also check layouts for Suspense
+  const layoutHasSuspense = allLayoutPaths.some((path) =>
+    hasSuspenseBoundariesSync(path)
+  );
+  const hasSuspenseBoundaries = hasSuspense || layoutHasSuspense;
+
   const routeInfo: RouteInfo = {
     path: routePath,
     filePath: fullPath,
@@ -294,6 +335,7 @@ const processRouteFile = (
     clientNavigable,
     ...(revalidateValue !== undefined && { revalidate: revalidateValue }),
     ...(dynamicSegments.length > 0 && { dynamicSegments }),
+    ...(hasSuspenseBoundaries && { hasSuspenseBoundaries: true }),
   };
   if (layoutPath) {
     routeInfo.layoutPath = layoutPath;
@@ -403,6 +445,9 @@ export const discoverRoutes = (appDir = "./src/app"): RouteTree => {
       clientNavigable: routeInfo.clientNavigable,
       ...(routeInfo.revalidate !== undefined && {
         revalidate: routeInfo.revalidate,
+      }),
+      ...(routeInfo.hasSuspenseBoundaries !== undefined && {
+        hasSuspenseBoundaries: routeInfo.hasSuspenseBoundaries,
       }),
     };
     if (routeInfo.layoutPath) {

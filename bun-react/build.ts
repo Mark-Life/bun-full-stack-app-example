@@ -4,7 +4,11 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { setCache } from "./src/framework/server/cache";
 import { discoverPublicAssets } from "./src/framework/server/public";
-import { renderRouteToString } from "./src/framework/server/render";
+import {
+  renderRouteToString,
+  renderShellToString,
+} from "./src/framework/server/render";
+import { hasCacheConfig } from "./src/framework/shared/cache";
 import { generateRouteTypes } from "./src/framework/shared/generate-route-types";
 import { getPageConfig, hasPageConfig } from "./src/framework/shared/page";
 import { discoverRoutes, type RouteInfo } from "./src/framework/shared/router";
@@ -521,6 +525,140 @@ const processStaticRoute = async (
 };
 
 /**
+ * Extract shell for a route with cached components
+ * This renders the static shell (with cached components executed) and saves it
+ * Uses renderShellToString which captures Suspense fallbacks for PPR
+ */
+const extractShell = async (
+  routePath: string,
+  routeInfo: RouteInfo,
+  params: Record<string, string>,
+  PageComponent: unknown
+): Promise<{ hasSuspense: boolean }> => {
+  const concretePath =
+    routeInfo.isDynamic && Object.keys(params).length > 0
+      ? buildConcretePath(routePath, params)
+      : routePath;
+
+  // Use renderShellToString which captures Suspense fallbacks
+  const pageData = await loadPageData(routeInfo, PageComponent, params);
+  const { shell, hasSuspense } = await renderShellToString(
+    routeInfo,
+    pageData,
+    params
+  );
+
+  // Save shell to dist/shells/
+  const shellPath =
+    concretePath === "/"
+      ? path.join(outdir, "shells", "index.html")
+      : path.join(outdir, "shells", concretePath.slice(1), "index.html");
+
+  await mkdir(path.dirname(shellPath), { recursive: true });
+  await Bun.write(shellPath, shell);
+
+  outputs.push({
+    File: path.relative(process.cwd(), shellPath),
+    Type: "shell",
+    Size: formatFileSize(shell.length),
+  });
+
+  return { hasSuspense };
+};
+
+/**
+ * Check if a route has cached components (for PPR)
+ * This is a simple check - full detection will be in render.tsx
+ */
+const hasCachedComponents = (
+  _routeInfo: RouteInfo,
+  PageComponent: unknown
+): boolean => {
+  // Check if page component itself is cached
+  if (hasCacheConfig(PageComponent as never)) {
+    return true;
+  }
+
+  // TODO: Walk component tree to find cached components
+  // For now, return false - will be enhanced in Phase 4
+  return false;
+};
+
+/**
+ * Extract shell for a single route with params
+ */
+const extractShellForRoute = async (
+  routePath: string,
+  routeInfo: RouteInfo,
+  PageComponent: unknown
+): Promise<{ count: number; hasSuspense: boolean }> => {
+  const paramSets = await getParamSets(routePath, routeInfo, PageComponent);
+  if (paramSets === null) {
+    return { count: 0, hasSuspense: false };
+  }
+
+  let count = 0;
+  let hasSuspense = false;
+  for (const params of paramSets) {
+    const result = await extractShell(
+      routePath,
+      routeInfo,
+      params,
+      PageComponent
+    );
+    hasSuspense = hasSuspense || result.hasSuspense;
+    count += 1;
+  }
+  return { count, hasSuspense };
+};
+
+/**
+ * Extract shells for routes with cached components (PPR)
+ */
+const extractShells = async () => {
+  console.log("🔨 Extracting shells for PPR routes...");
+
+  const { routes } = discoverRoutes("./src/app");
+  let shellCount = 0;
+
+  for (const [routePath, routeInfo] of routes.entries()) {
+    try {
+      const resolvedPagePath = resolveImportPath(routeInfo.filePath);
+      const pageModule = await import(resolvedPagePath);
+      const PageComponent = pageModule.default;
+
+      if (!PageComponent) {
+        continue;
+      }
+
+      // Check if route has cached components
+      const hasCached = hasCachedComponents(routeInfo, PageComponent);
+      if (!hasCached) {
+        continue;
+      }
+
+      const result = await extractShellForRoute(
+        routePath,
+        routeInfo,
+        PageComponent
+      );
+      shellCount += result.count;
+    } catch (error) {
+      console.warn(
+        `⚠️  Failed to extract shell for ${routePath}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  if (shellCount > 0) {
+    console.log(`✅ Extracted ${shellCount} shell(s)\n`);
+  } else {
+    console.log("🔨 No shells to extract\n");
+  }
+};
+
+/**
  * Pre-render static pages at build time
  */
 const preRenderStaticPages = async () => {
@@ -557,6 +695,7 @@ await buildHydrateBundle();
 await buildCssBundle();
 await copyPublicAssets();
 await preRenderStaticPages();
+await extractShells();
 
 const end = performance.now();
 

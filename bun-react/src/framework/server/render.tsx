@@ -1,8 +1,15 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import React from "react";
 import { renderToReadableStream, renderToString } from "react-dom/server";
 import type { RouteInfo } from "@/framework/shared/router";
+import {
+  buildRSCPayload,
+  clearCachedOutputRegistry,
+} from "~/framework/shared/cache";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
 import { SSRRoutePathProvider } from "~/framework/shared/route-context";
+import { serializePayload } from "~/framework/shared/serialize";
 
 /**
  * Resolve import path, converting ~/ alias to actual file path
@@ -356,6 +363,94 @@ const safeCloseController = (
 };
 
 /**
+ * Get shell HTML path for a route
+ */
+const getShellPath = (pathname: string): string => {
+  const normalizedPath = pathname === "/" ? "index" : pathname.slice(1);
+  return join(process.cwd(), "dist", "shells", normalizedPath, "index.html");
+};
+
+/**
+ * Check if shell exists for a route
+ */
+export const hasShell = (pathname: string): boolean => {
+  const shellPath = getShellPath(pathname);
+  return existsSync(shellPath);
+};
+
+/**
+ * Load shell HTML for a route
+ */
+export const loadShell = async (pathname: string): Promise<string | null> => {
+  const shellPath = getShellPath(pathname);
+  if (!existsSync(shellPath)) {
+    return null;
+  }
+
+  try {
+    const file = Bun.file(shellPath);
+    return await file.text();
+  } catch (error) {
+    console.warn(`Failed to load shell for ${pathname}:`, error);
+    return null;
+  }
+};
+
+/**
+ * Create a composite stream that stitches shell HTML with dynamic stream
+ * Used for PPR where static shell is pre-rendered and dynamic parts stream in
+ *
+ * React's streaming format works by:
+ * 1. Sending initial HTML (shell with fallbacks)
+ * 2. Then sending replacement chunks: <template id="B:X">content</template><script>$RC("B:X")</script>
+ *
+ * Since we already have the shell, we:
+ * 1. Send the shell HTML
+ * 2. Append only the Suspense replacement chunks from dynamicStream
+ * 3. React's hydration will handle replacing fallbacks with resolved content
+ *
+ * @param shellHtml - Pre-rendered shell HTML (with Suspense fallbacks)
+ * @param dynamicStream - React stream containing only Suspense boundary replacements
+ * @returns Composite stream
+ */
+export const compositeStream = (
+  shellHtml: string,
+  dynamicStream: ReadableStream<Uint8Array>
+): ReadableStream<Uint8Array> => {
+  const encoder = new TextEncoder();
+  let shellSent = false;
+  const reader = dynamicStream.getReader();
+
+  return new ReadableStream({
+    async pull(controller) {
+      // Send shell first (contains fallback UI)
+      if (!shellSent) {
+        controller.enqueue(encoder.encode(shellHtml));
+        shellSent = true;
+        return; // Return to allow streaming to continue
+      }
+
+      // Then stream dynamic content (Suspense replacements)
+      // renderDynamicParts already filters to only Suspense boundary chunks
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+
+    cancel() {
+      reader.cancel();
+    },
+  });
+};
+
+/**
  * Create a stream that actively consumes React's stream and forwards chunks
  * This ensures React continues processing Suspense boundaries
  * Also handles cancellation gracefully when user navigates away
@@ -424,6 +519,95 @@ const createActiveStream = (
       }
     },
     cancel: handleCancel,
+  });
+};
+
+/**
+ * Build RSC payload script tag
+ */
+const buildRSCPayloadScript = (): string | null => {
+  const payload = buildRSCPayload();
+  const componentCount = Object.keys(payload.components).length;
+  console.log(
+    `[RSC] Building payload with ${componentCount} cached components`
+  );
+  if (componentCount === 0) {
+    return null;
+  }
+  return `<script id="__RSC_PAYLOAD__" type="application/json">${serializePayload(payload)}</script>`;
+};
+
+/**
+ * Inject script before </body> in HTML string
+ */
+const injectBeforeBodyClose = (html: string, script: string): string => {
+  const idx = html.lastIndexOf("</body>");
+  if (idx !== -1) {
+    return html.slice(0, idx) + script + html.slice(idx);
+  }
+  return html + script;
+};
+
+/**
+ * Create a stream wrapper that injects RSC payload before </body>
+ * This ensures cached component outputs are available during hydration
+ */
+const createRSCPayloadStream = (
+  sourceStream: ReadableStream<Uint8Array>
+): ReadableStream<Uint8Array> => {
+  const reader = sourceStream.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let payloadInjected = false;
+
+  const processBuffer = (): string => {
+    const script = buildRSCPayloadScript();
+    if (script) {
+      payloadInjected = true;
+      return injectBeforeBodyClose(buffer, script);
+    }
+    return buffer;
+  };
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          if (buffer.length > 0 && !payloadInjected) {
+            controller.enqueue(encoder.encode(processBuffer()));
+          }
+          safeCloseController(controller);
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        if (!payloadInjected && buffer.includes("</body>")) {
+          controller.enqueue(encoder.encode(processBuffer()));
+          buffer = "";
+          return;
+        }
+
+        // Flush large buffers, keep tail for </body> detection
+        if (buffer.length > 65_536) {
+          controller.enqueue(encoder.encode(buffer.slice(0, -100)));
+          buffer = buffer.slice(-100);
+        }
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+
+    async cancel(reason) {
+      try {
+        await sourceStream.cancel(reason);
+      } catch {
+        // Ignore cancel errors
+      }
+    },
   });
 };
 
@@ -502,12 +686,211 @@ export const renderRouteToString = async (
 };
 
 /**
+ * Render shell with Suspense fallbacks for PPR
+ * Uses renderToString which renders Suspense fallbacks synchronously
+ * Wraps Suspense boundaries with markers for later dynamic content injection
+ */
+export const renderShellToString = async (
+  routeInfo: RouteInfo,
+  data: unknown,
+  params: Record<string, string> = {}
+): Promise<{ shell: string; hasSuspense: boolean }> => {
+  try {
+    // Import the page component from registry
+    const pageModule = await getRouteModule(routeInfo.filePath);
+    const PageComponentRaw = pageModule.default as
+      | React.ComponentType<Record<string, unknown>>
+      | undefined;
+
+    if (!PageComponentRaw) {
+      throw new Error(`No default export found in ${routeInfo.filePath}`);
+    }
+
+    const PageComponent: React.ComponentType<Record<string, unknown>> =
+      PageComponentRaw;
+
+    // Load layouts
+    const layouts = await loadLayouts(routeInfo);
+
+    // Check if route has any client components
+    const needsHydration = hasClientComponents(routeInfo);
+
+    // Build props with params and data
+    const pageProps: Record<string, unknown> = {
+      params: params || {},
+    };
+    if (data !== undefined) {
+      pageProps["data"] = data;
+    }
+
+    // Build the component tree
+    const component = buildComponentTree(PageComponent, pageProps, layouts, {
+      routePath: routeInfo.path,
+      needsHydration,
+      pageData: data !== undefined ? data : undefined,
+    });
+
+    // Render to string - this will render Suspense fallbacks synchronously
+    const html = renderToString(component);
+
+    // Check if HTML contains Suspense fallback markers
+    // React's renderToString outputs Suspense fallbacks, but we need to detect them
+    // We'll look for common patterns or wrap Suspense boundaries ourselves
+    // For now, detect by checking if there are async components that would suspend
+    const hasSuspense = html.includes("Loading") || html.includes("fallback");
+
+    // Wrap in full HTML document
+    const hydrationScript = needsHydration
+      ? '<script type="module" src="/hydrate.js"></script>'
+      : "";
+
+    const hmrScript = getHmrScript();
+
+    const shell = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page</title>
+  <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <div id="root">${html}</div>
+  ${hydrationScript}${hmrScript}
+</body>
+</html>`;
+
+    return { shell, hasSuspense };
+  } catch (error) {
+    console.error(`Error rendering shell for route ${routeInfo.path}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Render only dynamic parts (Suspense boundaries) for PPR
+ * This renders the full page but filters the stream to only include
+ * Suspense boundary replacements, not the static shell content
+ */
+export const renderDynamicParts = async (
+  routeInfo: RouteInfo,
+  params: Record<string, string> = {}
+): Promise<ReadableStream<Uint8Array>> => {
+  try {
+    // Import the page component from registry
+    const pageModule = await getRouteModule(routeInfo.filePath);
+    const PageComponentRaw = pageModule.default as
+      | React.ComponentType<Record<string, unknown>>
+      | undefined;
+
+    if (!PageComponentRaw) {
+      throw new Error(`No default export found in ${routeInfo.filePath}`);
+    }
+
+    const PageComponent: React.ComponentType<Record<string, unknown>> =
+      PageComponentRaw;
+
+    // Check if page has loader (for dynamic routes with data fetching)
+    let pageData: unknown;
+    if (hasPageConfig(PageComponent)) {
+      const config = getPageConfig(PageComponent);
+      if (config.loader) {
+        pageData = await config.loader(params);
+      }
+    }
+
+    // Load layouts
+    const layouts = await loadLayouts(routeInfo);
+
+    // Check if route has any client components
+    const needsHydration = hasClientComponents(routeInfo);
+
+    // Build props with params and data
+    const pageProps: Record<string, unknown> = {
+      params: params || {},
+    };
+    if (pageData !== undefined) {
+      pageProps["data"] = pageData;
+    }
+
+    // Build the component tree
+    const component = buildComponentTree(PageComponent, pageProps, layouts, {
+      routePath: routeInfo.path,
+      needsHydration,
+      pageData: pageData !== undefined ? pageData : undefined,
+    });
+
+    // Create AbortController for cleanup
+    const abortController = new AbortController();
+
+    // Render to stream - React will stream Suspense boundaries
+    const reactStream = await renderToReadableStream(component, {
+      onError: createStreamErrorHandler(),
+      signal: abortController.signal,
+    });
+
+    // Filter stream to only include Suspense boundary replacements
+    // React's streaming format uses special markers:
+    // - `<template id="B:0">...</template><script>$RC("B:0")</script>` for boundaries
+    // - We want to capture these chunks and skip the initial shell content
+    const reader = reactStream.getReader();
+    let seenFirstBoundary = false;
+
+    return new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+
+          // Decode chunk to check for Suspense boundary markers
+          const chunk = new TextDecoder().decode(value);
+
+          // Look for React's Suspense boundary markers
+          // Format: <template id="B:X"> or <script>$RC("B:X")
+          const hasBoundaryMarker =
+            chunk.includes('<template id="B:') ||
+            chunk.includes('$RC("B:') ||
+            chunk.includes("<script>");
+
+          // Skip initial shell content, only stream Suspense replacements
+          // Once we see a boundary marker, start streaming
+          if (hasBoundaryMarker || seenFirstBoundary) {
+            seenFirstBoundary = true;
+            controller.enqueue(value);
+          }
+          // Otherwise, this is shell content - skip it
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+
+      cancel() {
+        abortController.abort();
+        reader.cancel();
+      },
+    });
+  } catch (error) {
+    console.error(
+      `Error rendering dynamic parts for route ${routeInfo.path}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
  * Render a route with its layout hierarchy
  */
 export const renderRoute = async (
   routeInfo: RouteInfo,
   params: Record<string, string> = {}
 ): Promise<Response> => {
+  // Clear cached output registry before each render
+  clearCachedOutputRegistry();
+
   try {
     // Import the page component from registry
     const pageModule = await getRouteModule(routeInfo.filePath);
@@ -588,7 +971,11 @@ export const renderRoute = async (
     // pulling chunks from the stream. Without this, Bun's Response may not
     // consume the stream fast enough for React to continue processing.
     // Pass the AbortController so we can signal React to abort when cancelled.
-    const stream = createActiveStream(reactStream, abortController);
+    const activeStream = createActiveStream(reactStream, abortController);
+
+    // Wrap stream to inject RSC payload before closing
+    // The payload is injected after </body> - browser will still parse it
+    const stream = createRSCPayloadStream(activeStream);
 
     return new Response(stream, {
       headers: {

@@ -6,7 +6,7 @@ import { createAPI } from "~/framework/shared/api";
 import { hello, helloPut } from "./hello";
 // biome-ignore lint/performance/noNamespaceImport: its ok here
 import * as products from "./products";
-import { revalidate } from "./revalidate";
+import { revalidate, revalidateTag } from "./revalidate";
 // biome-ignore lint/performance/noNamespaceImport: its ok here
 import * as users from "./users";
 
@@ -31,4 +31,5 @@ export const api = createAPI({
     update: products.update, // → /api/products/:id (PUT)
   },
   revalidate, // → /api/revalidate
+  revalidateTag, // → /api/revalidateTag
 });

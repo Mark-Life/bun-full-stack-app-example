@@ -166,6 +166,13 @@ const demoFeatures = [
     href: "/demos/api",
     icon: "🔒",
   },
+  {
+    title: "Partial Prerendering (PPR)",
+    description:
+      "Static shell served instantly, with cached components and dynamic content streaming.",
+    href: "/demos/ppr",
+    icon: "⚡",
+  },
 ] as const;
 
 const LandingPage = () => (
@@ -277,9 +284,7 @@ const LandingPage = () => (
             </FeatureItem>
             <FeatureItem status="done">Suspense Streaming</FeatureItem>
             <FeatureItem status="done">Client-Side Navigation</FeatureItem>
-            <FeatureItem status="planned">
-              Partial Prerendering (PPR)
-            </FeatureItem>
+            <FeatureItem status="done">Partial Prerendering (PPR)</FeatureItem>
           </CardContent>
         </Card>
 
@@ -297,7 +302,7 @@ const LandingPage = () => (
             <FeatureItem status="done">loader() data fetching</FeatureItem>
             <FeatureItem status="done">generateParams()</FeatureItem>
             <FeatureItem status="done">Async Components</FeatureItem>
-            <FeatureItem status="planned">Cache Components</FeatureItem>
+            <FeatureItem status="done">Cache Components</FeatureItem>
           </CardContent>
         </Card>
 
