@@ -2,12 +2,17 @@ import React from "react";
 import { renderToReadableStream, renderToString } from "react-dom/server";
 import type { RouteInfo } from "@/framework/shared/router";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
+import {
+  type RouteData,
+  serializeRouteData,
+} from "~/framework/shared/root-shell";
 import { SSRRoutePathProvider } from "~/framework/shared/route-context";
 
 /**
  * Simple logger that only logs in development
  */
 const isDev = process.env.NODE_ENV !== "production";
+// biome-ignore lint/suspicious/noEmptyBlockStatements: empty function is intentional for production
 const log = isDev ? console.log : () => {};
 const logError = console.error; // Always log errors
 const logWarn = console.warn; // Always log warnings
@@ -317,6 +322,7 @@ const buildComponentTree = async (
     routePath: string;
     needsHydration: boolean;
     pageData?: unknown;
+    isStatic?: boolean;
   }
 ): Promise<React.ReactElement> => {
   let component: React.ReactElement = React.createElement(
@@ -361,6 +367,7 @@ const buildComponentTree = async (
         routePath: options.routePath,
         hasClientComponents: options.needsHydration,
         ...(options.pageData !== undefined && { pageData: options.pageData }),
+        ...(options.isStatic !== undefined && { isStatic: options.isStatic }),
       },
       component
     );
@@ -429,6 +436,9 @@ const safeCloseController = (
  * This ensures React continues processing Suspense boundaries
  * Also handles cancellation gracefully when user navigates away
  *
+ * Optimized to reduce memory overhead by using a simpler reader pattern
+ * and avoiding unnecessary wrapper state.
+ *
  * @param reactStream - The stream from renderToReadableStream
  * @param abortController - AbortController to signal React to stop processing
  */
@@ -436,63 +446,62 @@ const createActiveStream = (
   reactStream: ReadableStream<Uint8Array>,
   abortController: AbortController
 ): ReadableStream<Uint8Array> => {
-  const reader = reactStream.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null =
+    reactStream.getReader();
   let cancelled = false;
 
-  const handlePullError = (
-    error: unknown,
-    controller: ReadableStreamDefaultController<Uint8Array>
-  ): void => {
-    if (cancelled) {
-      return;
-    }
-
-    if (isStreamCancelError(error)) {
-      safeCloseController(controller);
-    } else {
-      controller.error(error);
-    }
-  };
-
-  const handleCancel = async (_reason: unknown): Promise<void> => {
-    cancelled = true;
-    // Signal React to abort - this is the key to preventing the error
-    // React will clean up its internal state properly when aborted
-    abortController.abort();
-    try {
-      await reactStream.cancel();
-    } catch {
-      // Ignore cancel errors - stream may already be closed
-    }
-    try {
-      reader.releaseLock();
-    } catch {
-      // Ignore release errors - reader may already be released
+  const cleanup = (): void => {
+    if (reader) {
+      try {
+        reader.releaseLock();
+      } catch {
+        // Reader may already be released
+      }
+      reader = null;
     }
   };
 
   return new ReadableStream({
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: necessary for React streaming support with proper error handling
     async pull(controller) {
-      if (cancelled) {
+      if (cancelled || !reader) {
         return;
       }
 
       try {
         const { done, value } = await reader.read();
         if (done) {
+          cleanup();
           if (!cancelled) {
             safeCloseController(controller);
           }
           return;
         }
-        if (!cancelled) {
+        if (!cancelled && value) {
           controller.enqueue(value);
         }
       } catch (error) {
-        handlePullError(error, controller);
+        if (cancelled) {
+          return;
+        }
+        if (isStreamCancelError(error)) {
+          cleanup();
+          safeCloseController(controller);
+        } else {
+          controller.error(error);
+        }
       }
     },
-    cancel: handleCancel,
+    async cancel(_reason) {
+      cancelled = true;
+      abortController.abort();
+      try {
+        await reactStream.cancel();
+      } catch {
+        // Stream may already be closed
+      }
+      cleanup();
+    },
   });
 };
 
@@ -534,6 +543,12 @@ export const renderRouteToString = async (
       pageProps["data"] = data;
     }
 
+    // Determine if route is static (build-time, no dynamic params, no loader)
+    const isStatic =
+      routeInfo.pageType === "static" &&
+      !routeInfo.isDynamic &&
+      !routeInfo.hasLoader;
+
     // Build the component tree
     const component = await buildComponentTree(
       PageComponent,
@@ -543,6 +558,7 @@ export const renderRouteToString = async (
         routePath: routeInfo.path,
         needsHydration,
         pageData: data !== undefined ? data : undefined,
+        isStatic,
       }
     );
 
@@ -563,12 +579,14 @@ export const renderRouteToString = async (
 
     // Include route data script for hydration (matches RootShell behavior)
     // This is required for hydration to work correctly on static pages
-    const routeData = {
+    const routeData: RouteData = {
       routePath: routeInfo.path,
       hasClientComponents: needsHydration,
       ...(data !== undefined && { pageData: data }),
     };
-    const routeDataScript = `<script id="__ROUTE_DATA__" type="application/json">${JSON.stringify(routeData)}</script>`;
+    // Use cached serialization for static routes
+    const serializedRouteData = serializeRouteData(routeData, isStatic);
+    const routeDataScript = `<script id="__ROUTE_DATA__" type="application/json">${serializedRouteData}</script>`;
 
     // If RootShell was rendered, it already has the full HTML structure
     // We just need to inject our scripts before the closing </body> tag
@@ -650,6 +668,15 @@ export const renderRoute = async (
     // Check if route has any client components
     const needsHydration = hasClientComponents(routeInfo);
 
+    // Determine if route is static (no dynamic params, no loader)
+    // Note: Even if pageType is static, if there's a loader or dynamic params,
+    // the route data may vary per request
+    const isStatic =
+      routeInfo.pageType === "static" &&
+      !routeInfo.isDynamic &&
+      !routeInfo.hasLoader &&
+      pageData === undefined;
+
     // Build props with params and data
     // Always pass params for dynamic routes, default to empty object
     const pageProps: Record<string, unknown> = {
@@ -668,6 +695,7 @@ export const renderRoute = async (
         routePath: routeInfo.path,
         needsHydration,
         pageData: pageData !== undefined ? pageData : undefined,
+        isStatic,
       }
     );
 

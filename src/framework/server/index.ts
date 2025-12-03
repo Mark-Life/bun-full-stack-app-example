@@ -6,6 +6,7 @@ import { api } from "~/api";
 import { generateRouteTypes } from "~/framework/shared/generate-route-types";
 import { applyMiddleware } from "~/framework/shared/middleware";
 import { getPageConfig, hasPageConfig } from "~/framework/shared/page";
+import { clearRouteDataCache } from "~/framework/shared/root-shell";
 import { matchRoute, type RouteInfo } from "~/framework/shared/router";
 import middlewareConfig from "~/middleware";
 import { formatCacheAge, getFromCache, isStale, setCache } from "./cache";
@@ -486,6 +487,8 @@ const reloadRoutes = async (): Promise<void> => {
 
     // Clear module cache so fresh modules are loaded
     clearModuleCache();
+    // Clear route data cache (for static route JSON serialization)
+    clearRouteDataCache();
     // Clear route modules reference to force reload
     routeModulesRef = null;
     // Pre-load fresh route modules
@@ -688,6 +691,7 @@ if (process.env.NODE_ENV !== "production") {
             await rediscoverRoutes();
             generateRouteModulesFile(getRouteTree());
             clearModuleCache();
+            clearRouteDataCache();
             hydrateBundleCache = null;
             cssBundleCache = null;
             // Send HMR signal

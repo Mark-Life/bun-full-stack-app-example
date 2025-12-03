@@ -19,6 +19,41 @@ export interface RouteData {
   pageData?: unknown;
 }
 
+/**
+ * Cache for serialized route data (for static routes)
+ * Key: routePath, Value: serialized JSON string
+ */
+const routeDataCache = new Map<string, string>();
+
+/**
+ * Serialize route data to JSON string, with caching for static routes
+ * @param routeData - Route data to serialize
+ * @param isStatic - Whether this route is static (can be cached)
+ * @returns Serialized JSON string
+ */
+export const serializeRouteData = (
+  routeData: RouteData,
+  isStatic: boolean
+): string => {
+  if (isStatic) {
+    const cached = routeDataCache.get(routeData.routePath);
+    if (cached) {
+      return cached;
+    }
+    const serialized = JSON.stringify(routeData);
+    routeDataCache.set(routeData.routePath, serialized);
+    return serialized;
+  }
+  return JSON.stringify(routeData);
+};
+
+/**
+ * Clear cached route data (useful for HMR or route changes)
+ */
+export const clearRouteDataCache = (): void => {
+  routeDataCache.clear();
+};
+
 interface RootShellProps {
   children: React.ReactNode;
   metadata?: Metadata;
@@ -27,6 +62,8 @@ interface RootShellProps {
   hasClientComponents?: boolean;
   /** Page data from loader (for hydration) */
   pageData?: unknown;
+  /** Whether this route is static (for caching serialized route data) */
+  isStatic?: boolean;
 }
 
 export const RootShell = ({
@@ -35,6 +72,7 @@ export const RootShell = ({
   routePath,
   hasClientComponents = true,
   pageData,
+  isStatic = false,
 }: RootShellProps) => {
   const title = metadata?.title || "Bun + React";
   const description =
@@ -48,6 +86,9 @@ export const RootShell = ({
     hasClientComponents,
     ...(pageData !== undefined && { pageData }),
   };
+
+  // Cache serialized route data for static routes
+  const serializedRouteData = serializeRouteData(routeData, isStatic);
 
   return (
     <html lang="en">
@@ -64,7 +105,7 @@ export const RootShell = ({
         <script
           // biome-ignore lint/security/noDangerouslySetInnerHtml: here we are setting the route data
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(routeData),
+            __html: serializedRouteData,
           }}
           id="__ROUTE_DATA__"
           type="application/json"
