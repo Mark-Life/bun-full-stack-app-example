@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { BunPlugin } from "bun";
 import { discoverRoutes } from "./router";
 import type { ComponentType } from "./rsc";
@@ -51,18 +53,40 @@ const generateComponentName = (
 /**
  * Convert import path to be relative to project root
  * Handles ~/ alias (maps to ./src/) and other path formats
+ * Ensures paths are relative and work correctly during bundling
  */
 const toImportPath = (filePath: string): string => {
   // Handle ~/ alias (maps to ./src/)
   if (filePath.startsWith("~/")) {
     return filePath.replace("~/", "./src/");
   }
+  // Handle @/ alias (maps to ./src/)
+  if (filePath.startsWith("@/")) {
+    return filePath.replace("@/", "./src/");
+  }
+  // Already correct format
   if (filePath.startsWith("./src/")) {
     return filePath;
   }
+  // Handle ./app/ paths
   if (filePath.startsWith("./app/")) {
     return filePath.replace("./app/", "./src/app/");
   }
+  // Handle absolute paths (shouldn't happen, but guard against it)
+  if (filePath.startsWith("/")) {
+    // Extract relative path from absolute path
+    const srcIndex = filePath.indexOf("/src/");
+    if (srcIndex !== -1) {
+      return `.${filePath.slice(srcIndex)}`;
+    }
+    // Fallback: try to make it relative
+    return `./src/${filePath.split("/").pop() || ""}`;
+  }
+  // Handle relative paths without ./
+  if (!(filePath.startsWith("./") || filePath.startsWith("../"))) {
+    return `./src/${filePath}`;
+  }
+  // Handle other relative paths
   return filePath.startsWith("./")
     ? `./src/${filePath.slice(2)}`
     : `./src/${filePath}`;
@@ -296,6 +320,17 @@ export const routesPlugin: BunPlugin = {
     build.onLoad(
       { filter: VIRTUAL_ROUTES_LOAD_FILTER, namespace: "virtual-routes" },
       () => {
+        // Ensure we're resolving paths from the correct directory
+        const cwd = process.cwd();
+
+        // Verify src directory exists (sanity check)
+        const srcPath = join(cwd, "src");
+        if (!existsSync(srcPath)) {
+          throw new Error(
+            `src directory not found at ${srcPath}. Current working directory: ${cwd}`
+          );
+        }
+
         const routeTree = discoverRoutes("./src/app");
         const routes = routeTree.routes;
 
