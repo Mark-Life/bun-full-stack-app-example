@@ -7,6 +7,23 @@ import { readFileSync } from "node:fs";
 import type { ComponentType as ReactComponentType, ReactNode } from "react";
 
 /**
+ * Get transpiler instance lazily (only in Bun environment)
+ * This is only used server-side for code analysis
+ */
+const getTranspiler = (): Bun.Transpiler | null => {
+  if (typeof Bun === "undefined") {
+    return null;
+  }
+  // Create transpiler lazily to avoid issues in browser context
+  if (!getTranspiler.transpiler) {
+    getTranspiler.transpiler = new Bun.Transpiler({ loader: "tsx" });
+  }
+  return getTranspiler.transpiler;
+};
+// Store transpiler instance on function to persist across calls
+getTranspiler.transpiler = null as Bun.Transpiler | null;
+
+/**
  * Layout configuration attached to components
  */
 export interface LayoutConfig {
@@ -79,23 +96,46 @@ export const hasLayoutConfig = (
 export const getLayoutConfig = (component: ConfiguredLayout): LayoutConfig =>
   component[LAYOUT_CONFIG_MARKER] as LayoutConfig;
 
-// Regex pattern for defineLayout usage
-const DEFINE_LAYOUT_REGEX = /defineLayout\s*\(/;
-
 /**
- * Check if file uses defineLayout() by scanning source
+ * Check if file uses defineLayout() by scanning imports and content
  */
 export const hasDefineLayoutUsage = (filePath: string): boolean => {
   try {
     const content = readFileSync(filePath, "utf-8");
-    return DEFINE_LAYOUT_REGEX.test(content);
+
+    // Check if defineLayout is imported from layout module
+    // Only in server/Bun environment
+    const transpiler = getTranspiler();
+    if (transpiler) {
+      try {
+        const { imports } = transpiler.scan(content);
+        const hasDefineLayoutImport = imports.some(
+          (imp) =>
+            imp.path.includes("layout") ||
+            imp.path.includes("defineLayout") ||
+            (imp.kind === "import-statement" &&
+              imp.path.includes("framework/shared/layout"))
+        );
+        
+        // Also check for direct usage in content
+        if (hasDefineLayoutImport && DEFINE_LAYOUT_USAGE_REGEX.test(content)) {
+          return true;
+        }
+      } catch {
+        // If parsing fails, fall back to regex-only check
+      }
+    }
+
+    // Fallback: simple regex check for defineLayout( usage
+    return DEFINE_LAYOUT_USAGE_REGEX.test(content);
   } catch {
     return false;
   }
 };
 
-// Regex pattern for clientNavigation: true
+// Regex patterns defined at top level for performance
 const CLIENT_NAVIGATION_REGEX = /clientNavigation\s*:\s*true/;
+const DEFINE_LAYOUT_USAGE_REGEX = /defineLayout\s*\(/;
 
 /**
  * Check if layout has clientNavigation enabled
@@ -106,7 +146,7 @@ export const hasClientNavigation = (filePath: string): boolean => {
     const content = readFileSync(filePath, "utf-8");
     // Must have both defineLayout and clientNavigation: true
     return (
-      DEFINE_LAYOUT_REGEX.test(content) && CLIENT_NAVIGATION_REGEX.test(content)
+      hasDefineLayoutUsage(filePath) && CLIENT_NAVIGATION_REGEX.test(content)
     );
   } catch {
     return false;

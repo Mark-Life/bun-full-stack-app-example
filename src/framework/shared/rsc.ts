@@ -13,16 +13,27 @@ import type { ComponentType as ReactComponentType } from "react";
 const CLIENT_MARKER = Symbol.for("__isClient");
 
 /**
+ * Get transpiler instance lazily (only in Bun environment)
+ * This is only used server-side for code analysis
+ */
+const getTranspiler = (): Bun.Transpiler | null => {
+  if (typeof Bun === "undefined") {
+    return null;
+  }
+  // Create transpiler lazily to avoid issues in browser context
+  if (!getTranspiler.transpiler) {
+    getTranspiler.transpiler = new Bun.Transpiler({ loader: "tsx" });
+  }
+  return getTranspiler.transpiler;
+};
+// Store transpiler instance on function to persist across calls
+getTranspiler.transpiler = null as Bun.Transpiler | null;
+
+/**
  * Regex patterns for detecting client component usage
  */
-const CLIENT_COMPONENT_REGEX = /clientComponent\s*\(/g;
 const USE_CLIENT_DIRECTIVE_REGEX = /^\s*["']use client["'];?\s*$/m;
-const IMPORT_CLIENT_COMPONENT_REGEX =
-  /import\s+.*\bclientComponent\b.*from\s+["'][^"']+["']/;
-const EXPORT_CLIENT_COMPONENT_REGEX =
-  /export\s+(?:default\s+)?(?:const|function|class)\s+\w+\s*=\s*clientComponent/;
-// Use [\s\S]*? to match any character including newlines (non-greedy)
-const IMPORT_FROM_REGEX = /import\s+[\s\S]*?\s+from\s+["']([^"']+)["']/g;
+const CLIENT_COMPONENT_REGEX = /clientComponent\s*\(/g;
 
 /**
  * Type-safe client component marker
@@ -82,13 +93,25 @@ const hasClientComponentUsage = (content: string): boolean => {
     return true;
   }
 
-  // Also check if file imports clientComponent (indicates it might be used)
-  // This is a fallback for cases where the pattern might be more complex
-  if (
-    IMPORT_CLIENT_COMPONENT_REGEX.test(content) &&
-    EXPORT_CLIENT_COMPONENT_REGEX.test(content)
-  ) {
-    return true;
+  // Use transpiler to check if clientComponent is imported from rsc module
+  // Only in server/Bun environment
+  const transpiler = getTranspiler();
+  if (transpiler) {
+    try {
+      const { imports } = transpiler.scan(content);
+      const hasClientComponentImport = imports.some(
+        (imp) =>
+          imp.path.includes("rsc") ||
+          imp.path.includes("clientComponent") ||
+          (imp.kind === "import-statement" &&
+            imp.path.includes("framework/shared/rsc"))
+      );
+      if (hasClientComponentImport && CLIENT_COMPONENT_REGEX.test(content)) {
+        return true;
+      }
+    } catch {
+      // If parsing fails, fall back to regex-only check
+    }
   }
 
   return false;
@@ -107,24 +130,23 @@ export const getComponentType = (filePath: string): ComponentType =>
   hasUseClientDirective(filePath) ? "client" : "server";
 
 /**
- * Extract import paths from file content
+ * Extract import paths from file content using Bun's native transpiler
+ * Falls back to empty array if not in Bun environment or parsing fails
  */
 const extractImportPaths = (content: string): string[] => {
-  const importPaths: string[] = [];
-  let match: RegExpExecArray | null = null;
-
-  while (true) {
-    match = IMPORT_FROM_REGEX.exec(content);
-    if (match === null) {
-      break;
-    }
-    const importPath = match[1];
-    if (importPath) {
-      importPaths.push(importPath);
-    }
+  const transpiler = getTranspiler();
+  if (!transpiler) {
+    // Not in Bun environment (e.g., browser) - return empty array
+    // This function is only used server-side during route discovery anyway
+    return [];
   }
-
-  return importPaths;
+  try {
+    const imports = transpiler.scanImports(content);
+    return imports.map((imp) => imp.path);
+  } catch {
+    // If parsing fails, return empty array
+    return [];
+  }
 };
 
 /**

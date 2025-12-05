@@ -7,6 +7,23 @@ import { readFileSync } from "node:fs";
 import type { ComponentType as ReactComponentType } from "react";
 
 /**
+ * Get transpiler instance lazily (only in Bun environment)
+ * This is only used server-side for code analysis
+ */
+const getTranspiler = (): Bun.Transpiler | null => {
+  if (typeof Bun === "undefined") {
+    return null;
+  }
+  // Create transpiler lazily to avoid issues in browser context
+  if (!getTranspiler.transpiler) {
+    getTranspiler.transpiler = new Bun.Transpiler({ loader: "tsx" });
+  }
+  return getTranspiler.transpiler;
+};
+// Store transpiler instance on function to persist across calls
+getTranspiler.transpiler = null as Bun.Transpiler | null;
+
+/**
  * Page rendering type
  */
 export type PageType = "static" | "dynamic";
@@ -145,16 +162,38 @@ export const getPageConfig = <
 ): PageConfig<TParams, TData> =>
   component[PAGE_CONFIG_MARKER] as unknown as PageConfig<TParams, TData>;
 
-// Regex pattern for definePage usage
-const DEFINE_PAGE_REGEX = /definePage\s*\(/;
-
 /**
- * Check if file uses definePage() by scanning source
+ * Check if file uses definePage() by scanning imports and content
  */
 export const hasDefinePageUsage = (filePath: string): boolean => {
   try {
     const content = readFileSync(filePath, "utf-8");
-    return DEFINE_PAGE_REGEX.test(content);
+
+    // Check if definePage is imported from page module
+    // Only in server/Bun environment
+    const transpiler = getTranspiler();
+    if (transpiler) {
+      try {
+        const { imports } = transpiler.scan(content);
+        const hasDefinePageImport = imports.some(
+          (imp) =>
+            imp.path.includes("page") ||
+            imp.path.includes("definePage") ||
+            (imp.kind === "import-statement" &&
+              imp.path.includes("framework/shared/page"))
+        );
+
+        // Also check for direct usage in content
+        if (hasDefinePageImport && DEFINE_PAGE_USAGE_REGEX.test(content)) {
+          return true;
+        }
+      } catch {
+        // If parsing fails, fall back to regex-only check
+      }
+    }
+
+    // Fallback: simple regex check for definePage( usage
+    return DEFINE_PAGE_USAGE_REGEX.test(content);
   } catch {
     return false;
   }
@@ -165,6 +204,7 @@ const STATIC_TYPE_REGEX = /type:\s*['"]static['"]/;
 const GENERATE_PARAMS_REGEX = /generateParams\s*[:=]/;
 const LOADER_REGEX = /loader\s*[:=]/;
 const REVALIDATE_REGEX = /revalidate\s*:\s*(\d+)/;
+const DEFINE_PAGE_USAGE_REGEX = /definePage\s*\(/;
 
 /**
  * Extract page type from file content
