@@ -27,8 +27,7 @@ This plan outlines the implementation of true React Server Components (RSC) with
 
 ## Phase 0: Research and Preparation
 
-### 0.1 Study react-server-dom-esm Package
-
+### 0.1 Study react-server-dom-esm Package ✅
 **Goal**: Understand the API surface and requirements of the ESM Flight implementation.
 
 **Tasks**:
@@ -47,9 +46,11 @@ This plan outlines the implementation of true React Server Components (RSC) with
 - React repository: `packages/react-server-dom-esm/`
 - Next.js implementation for reference patterns
 
-### 0.2 Study Current Framework Architecture
+### 0.2 Study Current Framework Architecture ✅
 
 **Goal**: Map existing code that will need modification.
+
+**Status**: Completed. See `plan/RSC/research-0.2.md` for detailed analysis.
 
 **Relevant Files**:
 | File | Purpose | RSC Impact |
