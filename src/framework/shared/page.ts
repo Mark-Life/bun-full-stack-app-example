@@ -5,6 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import type { ComponentType as ReactComponentType } from "react";
+import type { HeadData } from "./navigation-payload";
 
 /**
  * Page rendering type
@@ -30,6 +31,23 @@ export type LoaderFn<
 > = (params?: TParams) => TData | Promise<TData>;
 
 /**
+ * Metadata generator for head updates
+ * Receives params and loader data, returns head metadata
+ */
+export type GenerateMetadataFn<
+  TParams extends Record<string, string> = Record<string, string>,
+  TData = unknown,
+> = (ctx: { params: TParams; data: TData }) => HeadData | Promise<HeadData>;
+
+/**
+ * Redirect function for server-side redirects
+ * Returns redirect URL or null if no redirect
+ */
+export type RedirectFn<
+  TParams extends Record<string, string> = Record<string, string>,
+> = (params: TParams) => string | null | Promise<string | null>;
+
+/**
  * Page configuration attached to components
  */
 export interface PageConfig<
@@ -41,6 +59,10 @@ export interface PageConfig<
   loader?: LoaderFn<TData, TParams>;
   /** ISR revalidation interval in seconds. Undefined = no ISR (pure static or dynamic) */
   revalidate?: number;
+  /** Generate metadata for head updates (title, description, etc.) */
+  generateMetadata?: GenerateMetadataFn<TParams, TData>;
+  /** Server-side redirect function */
+  redirect?: RedirectFn<TParams>;
 }
 
 /**
@@ -104,6 +126,8 @@ export const definePage = <
   generateParams?: GenerateParamsFn<TParams>;
   loader?: LoaderFn<TData, TParams>;
   revalidate?: number;
+  generateMetadata?: GenerateMetadataFn<TParams, TData>;
+  redirect?: RedirectFn<TParams>;
 }): ConfiguredPage<P> => {
   const {
     component,
@@ -111,6 +135,8 @@ export const definePage = <
     generateParams,
     loader,
     revalidate,
+    generateMetadata,
+    redirect,
   } = pageConfig;
 
   // Attach config to component
@@ -119,6 +145,8 @@ export const definePage = <
     ...(generateParams && { generateParams }),
     ...(loader && { loader }),
     ...(revalidate !== undefined && { revalidate }),
+    ...(generateMetadata && { generateMetadata }),
+    ...(redirect && { redirect }),
   } as PageConfig<TParams, TData>;
   (component as ConfiguredPage<P>)[PAGE_CONFIG_MARKER] =
     attachedConfig as unknown as PageConfig;
@@ -165,6 +193,8 @@ const STATIC_TYPE_REGEX = /type:\s*['"]static['"]/;
 const GENERATE_PARAMS_REGEX = /generateParams\s*[:=]/;
 const LOADER_REGEX = /loader\s*[:=]/;
 const REVALIDATE_REGEX = /revalidate\s*:\s*(\d+)/;
+const GENERATE_METADATA_REGEX = /generateMetadata\s*[:=]/;
+const REDIRECT_REGEX = /redirect\s*[:=]/;
 
 /**
  * Extract page type from file content
@@ -224,5 +254,31 @@ export const extractRevalidate = (filePath: string): number | undefined => {
     return;
   } catch {
     return;
+  }
+};
+
+/**
+ * Check if file has generateMetadata function
+ */
+export const hasGenerateMetadata = (filePath: string): boolean => {
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    // Look for generateMetadata: or generateMetadata =
+    return GENERATE_METADATA_REGEX.test(content);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Check if file has redirect function
+ */
+export const hasRedirect = (filePath: string): boolean => {
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    // Look for redirect: or redirect =
+    return REDIRECT_REGEX.test(content);
+  } catch {
+    return false;
   }
 };

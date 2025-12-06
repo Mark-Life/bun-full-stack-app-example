@@ -186,9 +186,33 @@ Ensure chunk manifest includes all needed info for preloading.
 - `build.ts` (chunk manifest generation)
 
 **Changes**:
-- Include chunk sizes for prioritization
-- Add chunk type (page vs layout vs shared)
-- Ensure manifest is available at runtime
+- Include chunk sizes for prioritization ✅ **COMPLETED** - Chunks already include size for prioritization
+- Add chunk type (page vs layout vs shared) ⚠️ **NOT IMPLEMENTED** - See note below
+- Ensure manifest is available at runtime ✅ **COMPLETED** - Manifest is loaded at server startup
+
+**Note on Chunk Type Implementation**:
+
+Currently, the chunk manifest does not distinguish between page, layout, and shared chunks. The build process uses a heuristic that includes all chunks for routes that need hydration, but doesn't categorize them by type.
+
+**Options to implement chunk type**:
+
+1. **Add type field to chunk entries** (Recommended for future):
+   - Extend chunk manifest type to include `type: "page" | "layout" | "shared"`
+   - Analyze chunk contents or use Bun's metafile (if available) to determine type
+   - Update `build.ts` to categorize chunks during manifest generation
+   - Allows client to prioritize page chunks over layout/shared chunks
+
+2. **Keep current approach** (Current state):
+   - All chunks are treated equally
+   - Simpler implementation, works for basic use cases
+   - Can be enhanced later when better chunk analysis is available
+
+3. **Use filename heuristics** (Quick win):
+   - Infer chunk type from filename patterns (e.g., chunks containing route paths = page chunks)
+   - Less accurate but doesn't require deep analysis
+   - Can be implemented quickly as a stopgap
+
+**Current Status**: Chunk sizes are included and manifest is available at runtime. Chunk type categorization is deferred until better chunk analysis is available or deemed necessary for optimization.
 
 ### Testing Checklist for Phase 1
 

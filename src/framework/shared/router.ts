@@ -4,8 +4,10 @@ import { dirname, join, relative } from "node:path";
 import {
   extractPageType,
   extractRevalidate,
+  hasGenerateMetadata,
   hasGenerateParams,
   hasLoader,
+  hasRedirect,
   type PageType,
 } from "~/framework/shared/page";
 import {
@@ -58,6 +60,10 @@ export interface RouteInfo {
   hasStaticParams: boolean;
   /** Has loader for build-time data fetching */
   hasLoader: boolean;
+  /** Has generateMetadata for head updates */
+  hasGenerateMetadata: boolean;
+  /** Has redirect function for server-side redirects */
+  hasRedirect: boolean;
   /** Whether this route is in a client-navigable group (SPA-style navigation) */
   clientNavigable: boolean;
   /** ISR revalidation interval in seconds. Undefined = no ISR */
@@ -299,6 +305,8 @@ const processRouteFile = (
   const pageType = extractPageType(fullPath);
   const hasStaticParams = hasGenerateParams(fullPath);
   const hasLoaderFn = hasLoader(fullPath);
+  const hasGenerateMetadataFn = hasGenerateMetadata(fullPath);
+  const hasRedirectFn = hasRedirect(fullPath);
   const revalidateValue = extractRevalidate(fullPath);
 
   const routeInfo: RouteInfo = {
@@ -312,6 +320,8 @@ const processRouteFile = (
     pageType,
     hasStaticParams,
     hasLoader: hasLoaderFn,
+    hasGenerateMetadata: hasGenerateMetadataFn,
+    hasRedirect: hasRedirectFn,
     clientNavigable,
     ...(revalidateValue !== undefined && { revalidate: revalidateValue }),
     ...(dynamicSegments.length > 0 && { dynamicSegments }),
@@ -513,6 +523,8 @@ export const discoverRoutes = async (
       pageType: routeInfo.pageType,
       hasStaticParams: routeInfo.hasStaticParams,
       hasLoader: routeInfo.hasLoader,
+      hasGenerateMetadata: routeInfo.hasGenerateMetadata,
+      hasRedirect: routeInfo.hasRedirect,
       clientNavigable: routeInfo.clientNavigable,
       ...(routeInfo.revalidate !== undefined && {
         revalidate: routeInfo.revalidate,

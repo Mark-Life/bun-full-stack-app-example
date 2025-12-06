@@ -14,7 +14,9 @@ import { clearRouteDataCache } from "~/framework/shared/root-shell";
 import { matchRoute, type RouteInfo } from "~/framework/shared/router";
 import middlewareConfig from "~/middleware";
 import { formatCacheAge, getFromCache, isStale, setCache } from "./cache";
+import { handleDataRequest } from "./data-handler";
 import { generateRouteModulesFile } from "./generate-route-modules";
+import { initializeBuildSalt } from "./hash";
 import { discoverPublicAssets } from "./public";
 import { clearModuleCache, renderRoute, renderRouteToString } from "./render";
 import { queueRevalidation } from "./revalidate";
@@ -133,6 +135,11 @@ const buildCssBundle = async (): Promise<string> => {
  * Initialize route tree at startup (before server starts)
  */
 await initializeRouteTree();
+
+/**
+ * Initialize build salt for hash generation
+ */
+initializeBuildSalt();
 
 /**
  * Load chunk manifest from dist/chunk-manifest.json (production only)
@@ -537,6 +544,9 @@ const serverConfig = {
     // Typed API routes (with middleware applied)
     ...wrappedApiHandlers,
 
+    // Data endpoints for client-side navigation
+    "/__data/*": async (req: Request) => handleDataRequest(req),
+
     // App routes - try to match discovered routes first
     "/*": async (req: Request) => {
       const url = new URL(req.url);
@@ -561,6 +571,7 @@ const serverConfig = {
         "/index.css",
         "/hydrate.js",
         "/hmr",
+        "/__data/",
         ...publicAssetPaths,
       ];
       if (skipPaths.some((p) => pathname.startsWith(p))) {
@@ -779,6 +790,9 @@ const reloadRoutes = async (): Promise<void> => {
         // Typed API routes (with middleware applied)
         ...wrappedApiHandlers,
 
+        // Data endpoints for client-side navigation
+        "/__data/*": async (req: Request) => handleDataRequest(req),
+
         // App routes - try to match discovered routes first
         "/*": async (req) => {
           const url = new URL(req.url);
@@ -802,6 +816,7 @@ const reloadRoutes = async (): Promise<void> => {
             "/index.css",
             "/hydrate.js",
             "/hmr",
+            "/__data/",
             ...publicAssetPaths,
           ];
           if (skipPaths.some((p) => pathname.startsWith(p))) {

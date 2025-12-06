@@ -5,6 +5,8 @@ import {
   extractPageType,
   hasGenerateParams,
   hasLoader,
+  hasGenerateMetadata,
+  hasRedirect,
 } from "~/framework/shared/page";
 import {
   discoverRoutes,
@@ -140,6 +142,8 @@ export const getNotFoundRouteInfo = (): RouteInfo | null => {
   const pageType = extractPageType(notFoundPath);
   const hasStaticParams = hasGenerateParams(notFoundPath);
   const hasLoaderFn = hasLoader(notFoundPath);
+  const hasGenerateMetadataFn = hasGenerateMetadata(notFoundPath);
+  const hasRedirectFn = hasRedirect(notFoundPath);
 
   const routeInfo: RouteInfo = {
     path: "/not-found", // Dummy path, not used for routing
@@ -151,6 +155,8 @@ export const getNotFoundRouteInfo = (): RouteInfo | null => {
     pageType,
     hasStaticParams,
     hasLoader: hasLoaderFn,
+    hasGenerateMetadata: hasGenerateMetadataFn,
+    hasRedirect: hasRedirectFn,
     clientNavigable,
   };
 
