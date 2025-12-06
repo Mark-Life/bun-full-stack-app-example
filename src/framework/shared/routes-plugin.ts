@@ -254,11 +254,6 @@ const generateRouteConfig = (
   // Add page type
   routeConfig.push(`pageType: "${routeInfo.pageType}"`);
 
-  // Add client navigable flag
-  if (routeInfo.clientNavigable) {
-    routeConfig.push("clientNavigable: true");
-  }
-
   return `  "${routePath}": { ${routeConfig.join(", ")} }`;
 };
 
@@ -292,8 +287,6 @@ export interface RouteConfig {
   dynamicSegments?: string[];
   /** Page rendering type: static (build-time) or dynamic (request-time) */
   pageType: PageType;
-  /** Whether this route is in a client-navigable group (SPA-style navigation) */
-  clientNavigable?: boolean;
 }
 
 export const routes: Record<string, RouteConfig> = {

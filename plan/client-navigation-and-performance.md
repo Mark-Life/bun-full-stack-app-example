@@ -1063,3 +1063,294 @@ export const defineLayout = (config) => config.component;
 3. Should server functions support file uploads?
 4. Should we add request caching for server functions?
 
+
+
+---
+
+## Why Suspense with Async Server Components Doesn't Work on Client Navigation
+
+### The Core Problem
+
+The `suspense/page.tsx` uses **async server components**:
+
+```tsx
+const AsyncData = async ({ delay }: { delay: number }) => {
+  const data = await fetchData(delay);
+  return <div>✅ {data}</div>;
+};
+```
+
+**Fundamental constraint**: Async components (`async function`) can **ONLY execute on the server**. They cannot run in the browser because:
+
+1. React's client-side renderer expects **synchronous** component functions
+2. An `async function` returns a `Promise`, not a React element
+3. React sees the Promise, treats it as "suspending", but the Promise doesn't resolve to a React element the way React expects
+
+### Flow Comparison
+
+| Step | Full Page Load ✅ | Client Navigation ❌ |
+|------|------------------|---------------------|
+| 1 | Browser requests `/demos/suspense` | User clicks Link |
+| 2 | Server runs `renderToReadableStream` | Router fetches `/__data/demos/suspense` |
+| 3 | Server executes async components | Router sets `currentRoute` |
+| 4 | Server waits/streams resolved HTML | React tries to render `AsyncData` on client |
+| 5 | Client hydrates static HTML | `AsyncData` returns Promise → Suspense fallback forever |
+
+---
+
+## Possible Solutions for Phase 5
+
+### Solution 1: Server-Rendered HTML Injection (Recommended)
+
+**Concept**: For routes with async server components, fetch **pre-rendered HTML** instead of trying to render on client.
+
+**How it works**:
+```
+Client Navigation to /demos/suspense
+  → Fetch /__html/demos/suspense (or extend /__data/ to include HTML)
+  → Server renders full page HTML with streaming
+  → Client receives HTML string
+  → Client replaces #root innerHTML (or uses morphdom/idiomorph for smart diffing)
+  → Re-attach event listeners for interactive elements
+```
+
+**Pros**:
+- Works with any server component pattern (async, Suspense, etc.)
+- Preserves streaming behavior conceptually (HTML arrives progressively)
+- No changes to page components needed
+
+**Cons**:
+- Larger payload (HTML vs JSON)
+- Need smart DOM diffing to avoid flicker
+- Event listener re-attachment is complex
+
+**Implementation sketch**:
+```typescript
+// In router.tsx navigate()
+if (route.hasAsyncServerComponents) {
+  const html = await fetch(`/__html${path}`).then(r => r.text());
+  morphdom(document.getElementById('root'), html);
+  reattachEventListeners();
+}
+```
+
+---
+
+### Solution 2: RSC-Lite Protocol (Similar to Next.js App Router)
+
+**Concept**: Create a simplified "Flight-like" protocol that sends serialized React tree, not raw component functions.
+
+**How it works**:
+```
+Client Navigation
+  → Fetch /__rsc/demos/suspense
+  → Server renders components, serializes output as JSON-like structure
+  → Client receives serialized tree (not executable code)
+  → Client reconstructs React elements from serialized data
+```
+
+**Payload example**:
+```json
+{
+  "type": "div",
+  "props": { "className": "space-y-8" },
+  "children": [
+    { "type": "h1", "props": {}, "children": ["Suspense Streaming"] },
+    { 
+      "type": "SuspenseResult",
+      "key": "async-data-500",
+      "resolved": true,
+      "content": {
+        "type": "div",
+        "props": { "className": "rounded-lg..." },
+        "children": ["✅ Data loaded after 500ms"]
+      }
+    }
+  ]
+}
+```
+
+**Pros**:
+- Smaller than HTML
+- Can handle partial updates
+- Type-safe serialization possible
+
+**Cons**:
+- Complex to implement
+- Need to handle all React element types
+- Essentially reinventing RSC Flight (which has security issues)
+
+---
+
+### Solution 3: Hybrid Navigation Mode
+
+**Concept**: Detect route capabilities and use different navigation strategies.
+
+**Route types**:
+1. **Client-renderable**: Regular components, `definePage` with loaders → JSON navigation
+2. **Server-only**: Async components, Suspense streaming → Full page reload or HTML injection
+
+**Implementation**:
+```typescript
+// In routes-plugin.ts or route discovery
+interface RouteInfo {
+  // ... existing fields ...
+  hasAsyncComponents: boolean;  // Detected at build time
+  requiresServerRender: boolean;
+}
+
+// In router.tsx navigate()
+if (match.route.requiresServerRender) {
+  // Option A: Full page reload
+  window.location.href = path;
+  
+  // Option B: HTML injection
+  const html = await fetch(`/__html${path}`);
+  injectHTML(html);
+}
+```
+
+**Pros**:
+- Best of both worlds
+- No changes to working routes
+- Explicit behavior per route
+
+**Cons**:
+- Two code paths to maintain
+- Detection of async components is tricky
+
+---
+
+### Solution 4: Convert Async Components to Loaders
+
+**Concept**: Transform async server components pattern to `definePage` with `loader`.
+
+**Before** (async component):
+```tsx
+const AsyncData = async ({ delay }) => {
+  const data = await fetchData(delay);
+  return <div>{data}</div>;
+};
+
+export default function Page() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AsyncData delay={500} />
+    </Suspense>
+  );
+}
+```
+
+**After** (loader pattern):
+```tsx
+export default definePage({
+  loader: async () => {
+    const [fast, medium, slow] = await Promise.all([
+      fetchData(500),
+      fetchData(1500),
+      fetchData(3000),
+    ]);
+    return { fast, medium, slow };
+  },
+  component: ({ data }) => (
+    <div>
+      <div>{data.fast}</div>
+      <div>{data.medium}</div>
+      <div>{data.slow}</div>
+    </div>
+  ),
+});
+```
+
+**Pros**:
+- Works with current router
+- Simple, no new infrastructure
+- Data fetching is centralized
+
+**Cons**:
+- Loses streaming benefit (all data loads before render)
+- Requires rewriting existing pages
+- Can't have independent loading states per section
+
+---
+
+### Solution 5: Streaming Data Protocol (Advanced)
+
+**Concept**: Extend `/__data/` to support streaming JSON for async data.
+
+**Protocol**:
+```
+GET /__data/demos/suspense
+Content-Type: application/x-ndjson
+
+{"type":"shell","html":"<div class='space-y-8'>..."}
+{"type":"suspense","id":"async-500","status":"pending"}
+{"type":"suspense","id":"async-1500","status":"pending"}
+{"type":"suspense","id":"async-3000","status":"pending"}
+{"type":"suspense","id":"async-500","status":"resolved","html":"<div>✅ Data loaded...</div>"}
+{"type":"suspense","id":"async-1500","status":"resolved","html":"<div>✅ Data loaded...</div>"}
+{"type":"suspense","id":"async-3000","status":"resolved","html":"<div>✅ Data loaded...</div>"}
+{"type":"done"}
+```
+
+**Client behavior**:
+1. Receive shell → render immediately
+2. Receive pending markers → show placeholders
+3. Receive resolved → inject HTML into placeholder
+
+**Pros**:
+- True progressive loading on client navigation
+- Same UX as initial page load
+- Works with existing Suspense patterns
+
+**Cons**:
+- Most complex to implement
+- Need placeholder system on client
+- Streaming JSON parsing required
+
+---
+
+## Recommendation for Phase 5
+
+| Solution | Complexity | Benefit | Recommended |
+|----------|-----------|---------|-------------|
+| 1. HTML Injection | Medium | Works for all cases | ✅ **Start here** |
+| 2. RSC-Lite | Very High | Elegant, small payload | ❌ Too complex |
+| 3. Hybrid Mode | Low | Quick win | ✅ **Fallback option** |
+| 4. Convert to Loaders | Low | No infra change | ⚠️ Loses streaming |
+| 5. Streaming Data | High | Best UX | 🔄 Future enhancement |
+
+### Suggested Phase 5 Plan
+
+1. **Detect async/Suspense routes** at build time (add `hasAsyncComponents` to RouteInfo)
+2. **Implement Solution 3 (Hybrid)** first - fallback to full reload for these routes
+3. **Then implement Solution 1 (HTML Injection)** with smart DOM diffing
+4. **Consider Solution 5** as Phase 6 for optimal streaming experience
+
+---
+
+## Quick Fix for Now
+
+If you want the Suspense demo to work with client navigation **without Phase 5**, the simplest approach is to make it fall back to full page reload:
+
+```typescript
+// In Link component or router
+const shouldFullReload = (path: string): boolean => {
+  // Routes that need server rendering
+  const serverOnlyRoutes = ['/demos/suspense'];
+  return serverOnlyRoutes.some(r => path.startsWith(r));
+};
+
+// In navigate()
+if (shouldFullReload(path)) {
+  window.location.href = path;
+  return;
+}
+```
+
+Or update the Suspense demo to use the `definePage` loader pattern (Solution 4) - though this loses the streaming demonstration.
+
+Would you like me to detail any of these solutions further?
+
+---
+

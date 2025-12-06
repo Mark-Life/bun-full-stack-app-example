@@ -15,7 +15,6 @@ import {
   hasClientBoundariesSync,
   hasUseClientDirective,
 } from "~/framework/shared/rsc";
-import { hasClientNavigation } from "./layout";
 
 /**
  * Route file names that create routes
@@ -64,8 +63,6 @@ export interface RouteInfo {
   hasGenerateMetadata: boolean;
   /** Has redirect function for server-side redirects */
   hasRedirect: boolean;
-  /** Whether this route is in a client-navigable group (SPA-style navigation) */
-  clientNavigable: boolean;
   /** ISR revalidation interval in seconds. Undefined = no ISR */
   revalidate?: number;
 }
@@ -175,18 +172,17 @@ const filePathToRoute = (
 };
 
 /**
- * Layout info with component type and client navigation flag
+ * Layout info with component type
  */
 interface LayoutInfo {
   path: string;
   isClient: boolean;
-  hasClientNavigation: boolean;
 }
 
 /**
  * Find all layout files in the path hierarchy
  * Returns layouts in order from root to leaf (outermost to innermost)
- * Also determines if each layout is a client component and has client navigation
+ * Also determines if each layout is a client component
  */
 const findLayouts = (
   filePath: string,
@@ -195,7 +191,6 @@ const findLayouts = (
   layoutPath?: string;
   parentLayouts: string[];
   layoutTypes: ComponentType[];
-  clientNavigable: boolean;
 } => {
   const allLayouts: LayoutInfo[] = [];
   let currentDir = dirname(filePath);
@@ -206,7 +201,6 @@ const findLayouts = (
     allLayouts.push({
       path: rootLayout,
       isClient: hasUseClientDirective(rootLayout),
-      hasClientNavigation: hasClientNavigation(rootLayout),
     });
   }
 
@@ -228,7 +222,6 @@ const findLayouts = (
       allLayouts.push({
         path: layoutFile,
         isClient: hasUseClientDirective(layoutFile),
-        hasClientNavigation: hasClientNavigation(layoutFile),
       });
     }
     currentDir = dirname(currentDir);
@@ -239,14 +232,10 @@ const findLayouts = (
     l.isClient ? "client" : "server"
   );
 
-  // Check if any layout in the hierarchy has client navigation enabled
-  // If so, all child routes are client-navigable
-  const clientNavigable = allLayouts.some((l) => l.hasClientNavigation);
-
   // The last layout is the direct layout (closest to the route)
   // All others are parent layouts
   if (allLayouts.length === 0) {
-    return { parentLayouts: [], layoutTypes: [], clientNavigable: false };
+    return { parentLayouts: [], layoutTypes: [] };
   }
 
   if (allLayouts.length === 1) {
@@ -256,7 +245,6 @@ const findLayouts = (
         layoutPath: layout.path,
         parentLayouts: [],
         layoutTypes,
-        clientNavigable,
       };
     }
   }
@@ -265,9 +253,9 @@ const findLayouts = (
   const parentLayouts = allLayouts.slice(0, -1).map((l) => l.path);
 
   if (layoutPath) {
-    return { layoutPath, parentLayouts, layoutTypes, clientNavigable };
+    return { layoutPath, parentLayouts, layoutTypes };
   }
-  return { parentLayouts, layoutTypes, clientNavigable };
+  return { parentLayouts, layoutTypes };
 };
 
 /**
@@ -283,8 +271,10 @@ const processRouteFile = (
     dynamicSegments,
     isDynamic,
   } = filePathToRoute(fullPath, appDir);
-  const { layoutPath, parentLayouts, layoutTypes, clientNavigable } =
-    findLayouts(fullPath, appDir);
+  const { layoutPath, parentLayouts, layoutTypes } = findLayouts(
+    fullPath,
+    appDir
+  );
 
   // Check if the page itself is a client component
   const isClientComponent = hasUseClientDirective(fullPath);
@@ -322,7 +312,6 @@ const processRouteFile = (
     hasLoader: hasLoaderFn,
     hasGenerateMetadata: hasGenerateMetadataFn,
     hasRedirect: hasRedirectFn,
-    clientNavigable,
     ...(revalidateValue !== undefined && { revalidate: revalidateValue }),
     ...(dynamicSegments.length > 0 && { dynamicSegments }),
   };
@@ -525,7 +514,6 @@ export const discoverRoutes = async (
       hasLoader: routeInfo.hasLoader,
       hasGenerateMetadata: routeInfo.hasGenerateMetadata,
       hasRedirect: routeInfo.hasRedirect,
-      clientNavigable: routeInfo.clientNavigable,
       ...(routeInfo.revalidate !== undefined && {
         revalidate: routeInfo.revalidate,
       }),

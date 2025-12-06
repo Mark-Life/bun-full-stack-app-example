@@ -11,7 +11,6 @@ import { type RouteConfig, routes } from "virtual:routes";
 import { type ReactNode, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import {
-  ClientNavigationProvider,
   RouteParamsProvider,
   RouterProvider,
 } from "./router";
@@ -296,47 +295,17 @@ const hydrateRoute = (
     }
   }
 
-  // Check if route is client-navigable
-  const isClientNavigable = route.clientNavigable === true;
-
-  // Get current path for client navigation
-  const currentPath =
-    typeof window !== "undefined" ? window.location.pathname : "/";
-
-  // Wrap with appropriate provider
-  let content: ReactNode;
-
-  if (isClientNavigable) {
-    // Use ClientNavigationProvider for SPA-style navigation
-    // It will manage route state and handle client-side navigation
-    // Pass the SSR content (pageContent) as children so it hydrates properly
-    content = (
-      <StrictMode>
-        <RouterProvider>
-          <ClientNavigationProvider
-            initialPageComponent={PageComponent}
-            initialParams={params}
-            initialPath={currentPath}
-            layoutComponent={LayoutComponent || null}
-            {...(ParentLayouts.length > 0 && { parentLayouts: ParentLayouts })}
-          >
-            {pageContent}
-          </ClientNavigationProvider>
-        </RouterProvider>
-      </StrictMode>
-    );
-  } else {
-    // Use regular RouterProvider for non-client-navigable routes
-    content = (
-      <StrictMode>
-        <RouterProvider>
-          <RouteParamsProvider params={params}>
-            {pageContent}
-          </RouteParamsProvider>
-        </RouterProvider>
-      </StrictMode>
-    );
-  }
+  // Wrap with RouterProvider for client-side navigation
+  // Pass the SSR content (pageContent) as children so it hydrates properly
+  const content: ReactNode = (
+    <StrictMode>
+      <RouterProvider>
+        <RouteParamsProvider params={params}>
+          {pageContent}
+        </RouteParamsProvider>
+      </RouterProvider>
+    </StrictMode>
+  );
 
   // Hydrate the existing HTML
   hydrateRoot(root, content);

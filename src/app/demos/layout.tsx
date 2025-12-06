@@ -18,6 +18,4 @@ const DemosLayoutComponent = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-export default defineLayout({
-  component: DemosLayoutComponent,
-});
+export default defineLayout(DemosLayoutComponent);
